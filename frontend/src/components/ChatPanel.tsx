@@ -11,7 +11,7 @@ interface ChatPanelProps {
   inputValue: string;
   setInputValue: (value: string) => void;
   handleSendMessage: (e?: React.FormEvent) => void;
-  chatBottomRef: React.RefObject<HTMLDivElement | null>;
+  chatBottomRef: React.RefObject<any>;
 }
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({

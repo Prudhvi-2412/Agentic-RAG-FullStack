@@ -6,7 +6,7 @@ interface LandingViewProps {
   triggerFileSelect: () => void;
   handleDrag: (e: React.DragEvent) => void;
   handleDrop: (e: React.DragEvent) => void;
-  fileInputRef: React.RefObject<HTMLInputElement | null>;
+  fileInputRef: React.RefObject<any>;
   handleFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   isUploading: boolean;
   uploadStatus: string;
