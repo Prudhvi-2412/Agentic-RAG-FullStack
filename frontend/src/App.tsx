@@ -7,7 +7,7 @@ import { ChatPanel } from './components/ChatPanel';
 import { CitationsPanel } from './components/CitationsPanel';
 import { DocumentItem, Message, SourceCitation, ChatSession } from './types';
 
-const BACKEND_URL = 'http://localhost:8000';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
 export default function App() {
   // Navigation & View States
