@@ -1,5 +1,7 @@
 # DocuMind AI — Agentic Multimodal RAG Platform
 
+🌐 **Live Demo URL**: [https://agentic-rag-fullstack.onrender.com/](https://agentic-rag-fullstack.onrender.com/)
+
 DocuMind AI is a production-grade, enterprise-ready Agentic Retrieval-Augmented Generation (RAG) platform. It allows users to upload documents (PDF, DOCX, Markdown, TXT) and interact with them using layout-aware grounding, intent-based query routing, selective document filtering, and hybrid search.
 
 ---
