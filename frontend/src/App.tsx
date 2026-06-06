@@ -348,7 +348,7 @@ export default function App() {
     // 2. For real user-uploaded docs: delete vectors from Pinecone permanently
     if (!IS_DEMO_DOC) {
       try {
-        await fetch(`http://localhost:8000/api/documents/${id}`, { method: 'DELETE' });
+        await fetch(`${BACKEND_URL}/api/documents/${id}`, { method: 'DELETE' });
       } catch (err) {
         console.error('Error deleting document vectors from Pinecone:', err);
       }

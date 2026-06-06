@@ -1,9 +1,10 @@
-# Environment variables & secrets
+# ── Credentials & Secrets ────────────────────────────────────────────────────
 .env
 *.env
 .env.*
+!.env.example        # Allow the example template to be committed
 
-# Python
+# ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
 *.pyc
 *.pyo
@@ -16,19 +17,19 @@ pip-log.txt
 pip-delete-this-directory.txt
 .ipynb_checkpoints
 
-# Node.js
+# ── Node.js ───────────────────────────────────────────────────────────────────
 node_modules/
 dist/
 build/
 .npm
 .eslintcache
 
-# Operating System
+# ── Operating System ──────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# IDEs
+# ── IDEs ──────────────────────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.suo
@@ -36,3 +37,7 @@ desktop.ini
 *.njsproj
 *.sln
 *.swp
+
+# ── Large Binary Files ────────────────────────────────────────────────────────
+*.pdf
+stoic_notes.txt

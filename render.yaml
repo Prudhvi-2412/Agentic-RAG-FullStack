@@ -1,0 +1,48 @@
+services:
+  # ─────────────────────────────────────────────
+  # 1. FastAPI Backend — Python Web Service
+  # ─────────────────────────────────────────────
+  - type: web
+    name: documind-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false          # Set manually in Render dashboard → keep secret
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: PINECONE_INDEX_NAME
+        value: documind
+      - key: GEMINI_MODEL_NAME
+        value: gemini-2.5-flash
+      - key: PYTHON_VERSION
+        value: "3.11"
+
+  # ─────────────────────────────────────────────
+  # 2. React Frontend — Static Site
+  # ─────────────────────────────────────────────
+  - type: web
+    name: documind-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    pullRequestPreviewsEnabled: true   # Deploy preview on every PR
+    envVars:
+      - key: VITE_SUPABASE_URL
+        sync: false          # Set manually in Render dashboard
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      - key: VITE_BACKEND_URL
+        fromService:
+          name: documind-backend
+          type: web
+          property: host      # Automatically injects the deployed backend URL
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html  # SPA fallback for React Router
