@@ -88,38 +88,41 @@ jobs:
 
   # ─────────────────────────────────────────────
   # JOB 3: Deploy — Trigger Render auto-deploy
-  # (Render auto-deploys on push to main via the
-  #  GitHub integration — this job just notifies)
+  # Runs only on pushes to main/master after CI passes
   # ─────────────────────────────────────────────
   deploy-notify:
-    name: Notify Render Deploy
+    name: Trigger Render Deploy
     runs-on: ubuntu-latest
     needs: [backend-ci, frontend-ci]
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
 
     steps:
       - name: Trigger Render backend deploy hook
-        if: ${{ secrets.RENDER_BACKEND_DEPLOY_HOOK != '' }}
+        env:
+          HOOK_URL: ${{ secrets.RENDER_BACKEND_DEPLOY_HOOK }}
         run: |
-          curl -s "${{ secrets.RENDER_BACKEND_DEPLOY_HOOK }}" \
-            -X POST \
-            -d '' \
-            --fail \
-            && echo "✅ Backend deploy triggered on Render"
+          if [ -n "$HOOK_URL" ]; then
+            curl -s "$HOOK_URL" -X POST -d '' --fail \
+              && echo "✅ Backend deploy triggered on Render"
+          else
+            echo "⚠️  RENDER_BACKEND_DEPLOY_HOOK secret not set — skipping"
+          fi
 
       - name: Trigger Render frontend deploy hook
-        if: ${{ secrets.RENDER_FRONTEND_DEPLOY_HOOK != '' }}
+        env:
+          HOOK_URL: ${{ secrets.RENDER_FRONTEND_DEPLOY_HOOK }}
         run: |
-          curl -s "${{ secrets.RENDER_FRONTEND_DEPLOY_HOOK }}" \
-            -X POST \
-            -d '' \
-            --fail \
-            && echo "✅ Frontend deploy triggered on Render"
+          if [ -n "$HOOK_URL" ]; then
+            curl -s "$HOOK_URL" -X POST -d '' --fail \
+              && echo "✅ Frontend deploy triggered on Render"
+          else
+            echo "⚠️  RENDER_FRONTEND_DEPLOY_HOOK secret not set — skipping"
+          fi
 
       - name: Deployment summary
         run: |
           echo "🚀 DocuMind AI deployment triggered"
-          echo "Backend service: documind-backend"
-          echo "Frontend service: documind-frontend"
-          echo "Commit: ${{ github.sha }}"
-          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit : ${{ github.sha }}"
+          echo "Branch : ${{ github.ref_name }}"
+          echo "Actor  : ${{ github.actor }}"
+
