@@ -132,7 +132,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             placeholder={
               isUploading 
                 ? "Indexing in progress..." 
-                : "Ask a question about meditations, machine learning, or general topics..."
+                : "Ask a question about longevity, ikigai, machine learning, or general topics..."
             }
             disabled={isStreaming || isUploading}
             className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-3.5 pl-4 pr-12 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 transition-all font-medium disabled:opacity-60"

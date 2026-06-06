@@ -14,6 +14,7 @@ interface SidebarProps {
   activeFilters: string[];
   toggleFilter: (filename: string) => void;
   deleteDocument: (id: string, name: string) => void;
+  deleteSession: (id: string) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -28,6 +29,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeFilters,
   toggleFilter,
   deleteDocument,
+  deleteSession,
 }) => {
   return (
     <aside className="w-80 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col h-full">
@@ -75,18 +77,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
           <div className="flex flex-col gap-1">
             {chatSessions.map((session) => (
-              <button
-                key={session.id}
-                onClick={() => setActiveSessionId(session.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-medium transition-all ${
-                  activeSessionId === session.id 
-                    ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-bold' 
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
-                }`}
-              >
-                <MessageSquare className="h-4.5 w-4.5 flex-shrink-0" />
-                <span className="truncate flex-1">{session.title}</span>
-              </button>
+              <div key={session.id} className="group relative flex items-center">
+                <button
+                  onClick={() => setActiveSessionId(session.id)}
+                  className={`w-full flex items-center gap-3 pl-3 pr-9 py-2.5 rounded-xl text-left text-sm font-medium transition-all ${
+                    activeSessionId === session.id 
+                      ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-bold' 
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                  }`}
+                >
+                  <MessageSquare className="h-4.5 w-4.5 flex-shrink-0" />
+                  <span className="truncate flex-1">{session.title}</span>
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteSession(session.id);
+                  }}
+                  className="absolute right-2.5 p-1 text-slate-450 dark:text-slate-500 hover:text-red-500 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center shadow-sm"
+                  title="Delete conversation"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -123,9 +136,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       className="h-3.5 w-3.5 rounded text-blue-600 focus:ring-blue-500 border-slate-300 dark:border-slate-700 dark:bg-slate-800 cursor-pointer"
                     />
                     <FileText className={`h-4 w-4 flex-shrink-0 ${isSelected ? 'text-blue-600' : 'text-blue-500'}`} />
-                    <div className="truncate">
-                      <p className={`text-xs font-bold truncate ${isSelected ? 'text-blue-900 dark:text-blue-300' : 'text-slate-700 dark:text-slate-300'}`}>{doc.name}</p>
-                      <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">{doc.chunksCount} vectors</p>
+                    <div className="truncate flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <p className={`text-xs font-bold truncate ${isSelected ? 'text-blue-900 dark:text-blue-300' : 'text-slate-700 dark:text-slate-300'}`}>{doc.name}</p>
+                        {doc.id === 'ikigai-default-doc-id' && (
+                          <span className="flex-shrink-0 text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/50 uppercase tracking-wide">
+                            Demo
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">{doc.chunksCount} vectors · {doc.timestamp}</p>
                     </div>
                   </div>
                   <button 

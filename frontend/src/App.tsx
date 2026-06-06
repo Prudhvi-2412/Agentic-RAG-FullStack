@@ -6,12 +6,19 @@ import { Sidebar } from './components/Sidebar';
 import { ChatPanel } from './components/ChatPanel';
 import { CitationsPanel } from './components/CitationsPanel';
 import { DocumentItem, Message, SourceCitation, ChatSession } from './types';
+import { supabase } from './supabaseClient';
+import { AuthModal } from './components/AuthModal';
+import { User } from '@supabase/supabase-js';
 
 const BACKEND_URL = (import.meta as any).env.VITE_BACKEND_URL || ((import.meta as any).env.DEV ? 'http://localhost:8000' : 'https://agentic-rag-fullstack-1.onrender.com');
 
 export default function App() {
   // Navigation & View States
   const [currentView, setCurrentView] = useState<'landing' | 'dashboard'>('landing');
+  
+  // Supabase User & Auth States
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   
   // Theme State
   const [darkMode, setDarkMode] = useState<boolean>(() => {
@@ -31,27 +38,28 @@ export default function App() {
     localStorage.setItem('darkMode', String(darkMode));
   }, [darkMode]);
   
-  // Document List State
-  const [documents, setDocuments] = useState<DocumentItem[]>([
-    {
-      id: 'marcus-meditations-demo',
-      name: 'meidtations.pdf',
-      chunksCount: 1558,
-      status: 'indexed',
-      timestamp: 'Demo File'
-    }
-  ]);
+  // Ikigai pre-indexed demo document — always available for guest/new users
+  const IKIGAI_DEMO_DOC: DocumentItem = {
+    id: 'ikigai-default-doc-id',
+    name: 'Ikigai.pdf',
+    chunksCount: 847,
+    status: 'indexed',
+    timestamp: 'Pre-indexed Demo'
+  };
+
+  // Document List State — Ikigai demo shown by default for guests; replaced by user docs on login
+  const [documents, setDocuments] = useState<DocumentItem[]>([IKIGAI_DEMO_DOC]);
   
   // Chat States
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([
     {
       id: 'session-1',
-      title: 'Marcus Aurelius Stoicism',
+      title: 'Ikigai Longevity & Purpose',
       messages: [
         {
           id: 'welcome-msg',
           role: 'assistant',
-          text: 'Hello! I am DocuMind AI. Upload your documents in the sidebar, and I will help you extract insights. I am currently connected to Pinecone and the Gemini API.'
+          text: 'Hello! I am DocuMind AI. I have pre-indexed the book "Ikigai: The Japanese Secret to a Long and Happy Life". Ask me anything about finding your purpose, longevity, or flow!'
         }
       ],
       sources: [],
@@ -92,6 +100,147 @@ export default function App() {
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, currentStreamText]);
+
+  // Load User Data from Supabase
+  const loadUserData = async (userId: string) => {
+    try {
+      // 1. Fetch documents
+      const { data: docs, error: docsError } = await supabase
+        .from('documents')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (docsError) throw docsError;
+
+      // 2. Fetch sessions
+      const { data: sessions, error: sessionsError } = await supabase
+        .from('chat_sessions')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (sessionsError) throw sessionsError;
+
+      // 3. Fetch messages for each session
+      const sessionsWithMessages = await Promise.all(
+        (sessions || []).map(async (session) => {
+          const { data: msgs, error: msgsError } = await supabase
+            .from('messages')
+            .select('*')
+            .eq('session_id', session.id)
+            .order('created_at', { ascending: true });
+
+          if (msgsError) throw msgsError;
+
+          return {
+            id: session.id,
+            title: session.title,
+            messages: (msgs || []).map(m => ({
+              id: m.id,
+              role: m.role as 'user' | 'assistant',
+              text: m.text
+            })),
+            sources: [],
+            queryType: session.query_type || null
+          };
+        })
+      );
+
+      const mappedDocs = (docs || []).map(d => ({
+        id: d.id,
+        name: d.name,
+        chunksCount: d.chunks_count,
+        status: d.status,
+        timestamp: new Date(d.created_at).toLocaleDateString()
+      }));
+
+      setDocuments(mappedDocs);
+      
+      if (sessionsWithMessages.length > 0) {
+        setChatSessions(sessionsWithMessages);
+        setActiveSessionId(sessionsWithMessages[0].id);
+      } else {
+        const defaultSessionId = `session-${Date.now()}`;
+        const defaultSession = {
+          id: defaultSessionId,
+          title: 'Ikigai Longevity & Purpose',
+          messages: [
+            {
+              id: 'welcome-msg',
+              role: 'assistant' as const,
+              text: 'Hello! I am DocuMind AI. I have pre-indexed the book "Ikigai: The Japanese Secret to a Long and Happy Life". Ask me anything about finding your purpose, longevity, or flow!'
+            }
+          ],
+          sources: [],
+          queryType: null
+        };
+        
+        await supabase.from('chat_sessions').insert({
+          id: defaultSessionId,
+          user_id: userId,
+          title: defaultSession.title,
+          query_type: null
+        });
+
+        await supabase.from('messages').insert({
+          session_id: defaultSessionId,
+          role: 'assistant',
+          text: defaultSession.messages[0].text
+        });
+
+        setChatSessions([defaultSession]);
+        setActiveSessionId(defaultSessionId);
+      }
+
+    } catch (err) {
+      console.error('Error loading user data from Supabase:', err);
+    }
+  };
+
+  const clearUserData = () => {
+    // Restore Ikigai demo doc for guests on logout
+    setDocuments([IKIGAI_DEMO_DOC]);
+    setChatSessions([
+      {
+        id: 'session-1',
+        title: 'Ikigai Longevity & Purpose',
+        messages: [
+          {
+            id: 'welcome-msg',
+            role: 'assistant',
+            text: 'Hello! I am DocuMind AI. I have pre-indexed the book "Ikigai: The Japanese Secret to a Long and Happy Life". Ask me anything about finding your purpose, longevity, or flow!'
+          }
+        ],
+        sources: [],
+        queryType: null
+      }
+    ]);
+    setActiveSessionId('session-1');
+  };
+
+  // Auth synchronization listener
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        loadUserData(session.user.id);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        loadUserData(session.user.id);
+      } else {
+        clearUserData();
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
 
   // Drag and Drop Ingestion Handlers
   const handleDrag = (e: React.DragEvent) => {
@@ -157,6 +306,15 @@ export default function App() {
       };
 
       setDocuments(prev => [newDoc, ...prev]);
+      if (user) {
+        await supabase.from('documents').insert({
+          id: data.document_id,
+          user_id: user.id,
+          name: data.filename,
+          chunks_count: data.chunks_created,
+          status: data.status
+        });
+      }
       setUploadStatus('Ingested & Indexed!');
       
       // Auto transition to workspace
@@ -177,15 +335,104 @@ export default function App() {
     }
   };
 
-  // Delete Document Handler
-  const deleteDocument = (id: string, name: string) => {
+  // Delete Document Handler — permanently removes from Pinecone + Supabase/localStorage
+  // The Ikigai demo doc (ikigai-default-doc-id) is a shared pre-indexed book; removing it from
+  // the UI is fine but we never wipe its Pinecone vectors so new users always find it queryable.
+  const deleteDocument = async (id: string, name: string) => {
+    const IS_DEMO_DOC = id === 'ikigai-default-doc-id';
+
+    // 1. Immediately remove from UI
     setDocuments(prev => prev.filter(doc => doc.id !== id));
     setActiveFilters(prev => prev.filter(f => f !== name));
-    alert(`"${name}" vector indexes deleted from Pinecone environment cache.`);
+
+    // 2. For real user-uploaded docs: delete vectors from Pinecone permanently
+    if (!IS_DEMO_DOC) {
+      try {
+        await fetch(`http://localhost:8000/api/documents/${id}`, { method: 'DELETE' });
+      } catch (err) {
+        console.error('Error deleting document vectors from Pinecone:', err);
+      }
+
+      // 3. Persist deletion — Supabase for logged-in users, localStorage for guests
+      if (user) {
+        try {
+          await supabase.from('documents').delete().eq('id', id);
+        } catch (err) {
+          console.error('Error deleting document from Supabase:', err);
+        }
+      } else {
+        const deleted: string[] = JSON.parse(localStorage.getItem('deletedDocIds') || '[]');
+        if (!deleted.includes(id)) {
+          deleted.push(id);
+          localStorage.setItem('deletedDocIds', JSON.stringify(deleted));
+        }
+      }
+    }
+    // Demo doc removal is UI-only — Pinecone vectors stay intact for other users
+  };
+
+  // Delete Chat Session Handler
+  const deleteSession = async (sessionId: string) => {
+    let nextActiveId = activeSessionId;
+    if (activeSessionId === sessionId) {
+      const remaining = chatSessions.filter(s => s.id !== sessionId);
+      if (remaining.length > 0) {
+        nextActiveId = remaining[0].id;
+      } else {
+        const defaultSessionId = `session-${Date.now()}`;
+        const defaultSession = {
+          id: defaultSessionId,
+          title: 'Ikigai Longevity & Purpose',
+          messages: [
+            {
+              id: 'welcome-msg',
+              role: 'assistant' as const,
+              text: 'Hello! I am DocuMind AI. I have pre-indexed the book "Ikigai: The Japanese Secret to a Long and Happy Life". Ask me anything about finding your purpose, longevity, or flow!'
+            }
+          ],
+          sources: [],
+          queryType: null
+        };
+
+        if (user) {
+          try {
+            await supabase.from('chat_sessions').insert({
+              id: defaultSessionId,
+              user_id: user.id,
+              title: defaultSession.title,
+              query_type: null
+            });
+
+            await supabase.from('messages').insert({
+              session_id: defaultSessionId,
+              role: 'assistant',
+              text: defaultSession.messages[0].text
+            });
+          } catch (err) {
+            console.error('Error creating default session on deletion:', err);
+          }
+        }
+
+        setChatSessions([defaultSession]);
+        setActiveSessionId(defaultSessionId);
+        return;
+      }
+    }
+
+    if (user) {
+      try {
+        await supabase.from('chat_sessions').delete().eq('id', sessionId);
+      } catch (err) {
+        console.error('Error deleting chat session from Supabase:', err);
+      }
+    }
+
+    setChatSessions(prev => prev.filter(s => s.id !== sessionId));
+    setActiveSessionId(nextActiveId);
   };
 
   // Create new chat session
-  const createNewSession = () => {
+  const createNewSession = async () => {
     const newSessionId = `session-${Date.now()}`;
     const newSession: ChatSession = {
       id: newSessionId,
@@ -200,6 +447,25 @@ export default function App() {
       sources: [],
       queryType: null
     };
+
+    if (user) {
+      try {
+        await supabase.from('chat_sessions').insert({
+          id: newSessionId,
+          user_id: user.id,
+          title: newSession.title,
+          query_type: null
+        });
+
+        await supabase.from('messages').insert({
+          session_id: newSessionId,
+          role: 'assistant',
+          text: newSession.messages[0].text
+        });
+      } catch (err) {
+        console.error('Error creating new session:', err);
+      }
+    }
 
     setChatSessions(prev => [newSession, ...prev]);
     setActiveSessionId(newSessionId);
@@ -223,6 +489,18 @@ export default function App() {
     const userMsg: Message = { id: `user-${Date.now()}`, role: 'user', text: queryText };
     const updatedMessages = [...messages, userMsg];
     
+    if (user) {
+      try {
+        await supabase.from('messages').insert({
+          session_id: activeSessionId,
+          role: 'user',
+          text: queryText
+        });
+      } catch (err) {
+        console.error('Error inserting user message:', err);
+      }
+    }
+
     // Update local session messages
     setChatSessions(prev => prev.map(s => {
       if (s.id === activeSessionId) {
@@ -315,6 +593,17 @@ export default function App() {
                 }));
               } else if (eventName === 'complete') {
                 setIsStreaming(false);
+                if (user) {
+                  try {
+                    await supabase.from('messages').insert({
+                      session_id: activeSessionId,
+                      role: 'assistant',
+                      text: accumulatedText
+                    });
+                  } catch (err) {
+                    console.error('Error inserting assistant message:', err);
+                  }
+                }
               }
             } catch (err) {
               console.error('Error parsing SSE packet:', err);
@@ -360,7 +649,22 @@ export default function App() {
       />
 
       {/* Header bar */}
-      <Header currentView={currentView} setCurrentView={setCurrentView} darkMode={darkMode} setDarkMode={setDarkMode} />
+      <Header 
+        currentView={currentView} 
+        setCurrentView={setCurrentView} 
+        darkMode={darkMode} 
+        setDarkMode={setDarkMode} 
+        user={user}
+        onAuthClick={() => setIsAuthModalOpen(true)}
+        onLogout={handleLogout}
+      />
+
+      {/* Authentication Modal */}
+      <AuthModal 
+        isOpen={isAuthModalOpen} 
+        onClose={() => setIsAuthModalOpen(false)} 
+        onAuthSuccess={() => {}}
+      />
 
       {/* Main content body */}
       <main className="flex-1 flex overflow-hidden">
@@ -395,6 +699,7 @@ export default function App() {
               activeFilters={activeFilters}
               toggleFilter={toggleFilter}
               deleteDocument={deleteDocument}
+              deleteSession={deleteSession}
             />
 
             {/* Center Chat Panel */}

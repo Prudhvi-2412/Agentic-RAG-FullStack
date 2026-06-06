@@ -54,3 +54,58 @@ async def upload_document(request: Request, file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Missing dependencies on server: {str(ie)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Pipeline ingestion failed: {str(e)}")
+
+@router.delete("/documents/{document_id}")
+async def delete_document_endpoint(request: Request, document_id: str):
+    """
+    Deletes all indexed vectors associated with a document_id from Pinecone.
+    """
+    vectorstore = request.app.state.vector_store_service
+    try:
+        await vectorstore.delete_document(document_id)
+        return {"status": "success", "message": f"Document {document_id} deleted from Pinecone"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete document: {str(e)}")
+
+import os
+
+@router.get("/setup-ikigai")
+async def setup_ikigai(request: Request):
+    """
+    Deletes all vectors of meditations.pdf and ingests Ikigai.pdf into Pinecone.
+    """
+    vectorstore = request.app.state.vector_store_service
+    processor = request.app.state.document_processor
+    
+    # 1. Delete all vectors associated with old meditations books
+    try:
+        vectorstore.index.delete(filter={"filename": {"$in": ["meditations.pdf", "meidations.pdf", "Meditations.pdf"]}})
+    except Exception as de:
+        print(f"No existing meditations vectors to delete or delete failed: {de}")
+        
+    # 2. Locate and read Ikigai PDF
+    pdf_filename = "Ikigai _ the Japanese secret to a long and happy life ( PDFDrive.com ).pdf"
+    pdf_path = os.path.join("d:\\RAG-on-PDF-main\\Ai agent\\Agentic-RAG-FullStack", pdf_filename)
+    
+    if not os.path.exists(pdf_path):
+        pdf_path = os.path.join(os.getcwd(), pdf_filename)
+        if not os.path.exists(pdf_path):
+            raise HTTPException(status_code=404, detail="Ikigai PDF not found in workspace path.")
+            
+    try:
+        with open(pdf_path, "rb") as f:
+            content_bytes = f.read()
+            
+        document_id = "ikigai-default-doc-id"
+        chunks = await processor.process_file(content_bytes, "Ikigai.pdf", document_id)
+        if not chunks:
+            raise HTTPException(status_code=400, detail="Failed to parse text from Ikigai PDF.")
+            
+        await vectorstore.upsert_chunks(chunks)
+        return {
+            "status": "success",
+            "message": "Deleted meditations.pdf and successfully ingested Ikigai.pdf",
+            "chunks_created": len(chunks)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to ingest Ikigai PDF: {str(e)}")

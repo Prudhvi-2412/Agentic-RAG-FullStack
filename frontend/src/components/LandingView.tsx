@@ -139,6 +139,63 @@ export const LandingView: React.FC<LandingViewProps> = ({
           </div>
         </div>
 
+        {/* Next-Gen vs Standard LLM Section */}
+        <div className="mt-24 w-full pt-16 border-t border-slate-200 dark:border-slate-800/80">
+          <div className="text-center mb-12">
+            <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Next-Generation Document Intelligence</h3>
+            <p className="text-sm text-slate-400 dark:text-slate-500 font-medium max-w-lg mx-auto mt-2">
+              Why an optimized custom RAG pipeline outperforms basic document copy-pasting or standard LLM file uploads.
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="p-6 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 rounded-2xl border border-slate-250 dark:border-slate-800 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all group">
+              <h4 className="font-bold text-slate-800 dark:text-slate-250 mb-2 text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                Unbounded Context Scale
+              </h4>
+              <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
+                Standard LLM chats hit token boundaries or experience high latency when uploading multiple large files. DocuMind chunks and indexes your entire collection, querying only the relevant segments to answer queries instantly.
+              </p>
+            </div>
+
+            <div className="p-6 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 rounded-2xl border border-slate-250 dark:border-slate-800 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all group">
+              <h4 className="font-bold text-slate-800 dark:text-slate-250 mb-2 text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                Visual & Structural Grounding
+              </h4>
+              <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
+                Generic file readers parse documents as flat text streams, stripping out visual layout context. DocuMind's visual OCR pipeline translates tables, charts, and diagrams into structured data before vector mapping.
+              </p>
+            </div>
+
+            <div className="p-6 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 rounded-2xl border border-slate-250 dark:border-slate-800 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all group">
+              <h4 className="font-bold text-slate-800 dark:text-slate-250 mb-2 text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                Deterministic Source Mappings
+              </h4>
+              <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
+                Rather than merging paragraphs or hallucinating source references, the RAG engine tracks and tags each extracted embedding to its exact page and segment, linking citations side-by-side with assistant responses.
+              </p>
+            </div>
+
+            <div className="p-6 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 rounded-2xl border border-slate-250 dark:border-slate-800 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all group md:col-span-1">
+              <h4 className="font-bold text-slate-800 dark:text-slate-250 mb-2 text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                Intent-Based Routing
+              </h4>
+              <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
+                Bypasses vector search for conversational or generic queries using an intelligent zero-shot classifier, preventing database lookup delays and ensuring highly focused context selection.
+              </p>
+            </div>
+
+            <div className="p-6 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 rounded-2xl border border-slate-250 dark:border-slate-800 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all group md:col-span-2">
+              <h4 className="font-bold text-slate-800 dark:text-slate-250 mb-2 text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                Private Sandbox Data Security
+              </h4>
+              <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
+                Commercial public LLM chat portals may store and train on uploaded proprietary files. In DocuMind, your data remains secure in your private Pinecone namespace and Supabase session, isolated from public training cycles.
+              </p>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
   );
