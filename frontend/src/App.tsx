@@ -13,6 +13,24 @@ export default function App() {
   // Navigation & View States
   const [currentView, setCurrentView] = useState<'landing' | 'dashboard'>('landing');
   
+  // Theme State
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem('darkMode');
+    if (saved !== null) {
+      return saved === 'true';
+    }
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('darkMode', String(darkMode));
+  }, [darkMode]);
+  
   // Document List State
   const [documents, setDocuments] = useState<DocumentItem[]>([
     {
@@ -331,9 +349,18 @@ export default function App() {
   }, [activeSessionId]);
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800 h-screen overflow-hidden">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col font-sans text-slate-800 dark:text-slate-100 h-screen overflow-hidden">
+      {/* Hidden file input for document ingestion */}
+      <input 
+        type="file" 
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        className="hidden" 
+        accept=".pdf,.docx,.txt,.md"
+      />
+
       {/* Header bar */}
-      <Header currentView={currentView} setCurrentView={setCurrentView} />
+      <Header currentView={currentView} setCurrentView={setCurrentView} darkMode={darkMode} setDarkMode={setDarkMode} />
 
       {/* Main content body */}
       <main className="flex-1 flex overflow-hidden">
@@ -345,8 +372,6 @@ export default function App() {
             triggerFileSelect={triggerFileSelect}
             handleDrag={handleDrag}
             handleDrop={handleDrop}
-            fileInputRef={fileInputRef}
-            handleFileChange={handleFileChange}
             isUploading={isUploading}
             uploadStatus={uploadStatus}
             dragActive={dragActive}

@@ -9,7 +9,7 @@ class EmbeddingService:
         """
         self.api_key = api_key
         self.client = genai.Client(api_key=self.api_key)
-        self.model_name = "text-embedding-004"
+        self.model_name = "gemini-embedding-001"
 
     def get_query_embedding(self, text: str) -> List[float]:
         """
@@ -20,7 +20,8 @@ class EmbeddingService:
             model=self.model_name,
             contents=text,
             config=types.EmbedContentConfig(
-                task_type="RETRIEVAL_QUERY"
+                task_type="RETRIEVAL_QUERY",
+                output_dimensionality=768
             )
         )
         return response.embeddings[0].values
@@ -36,7 +37,8 @@ class EmbeddingService:
             model=self.model_name,
             contents=texts,
             config=types.EmbedContentConfig(
-                task_type="RETRIEVAL_DOCUMENT"
+                task_type="RETRIEVAL_DOCUMENT",
+                output_dimensionality=768
             )
         )
         return [emb.values for emb in response.embeddings]
