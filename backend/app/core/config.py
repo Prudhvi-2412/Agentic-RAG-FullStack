@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = Field(..., description="Google Gemini API Key")
     pinecone_api_key: str = Field(..., description="Pinecone Vector Database API Key")
     pinecone_index_name: str = Field("documind", description="Pinecone Index Name")
-    gemini_model_name: str = Field("gemini-1.5-flash", description="Gemini Generative Model Name")
+    gemini_model_name: str = Field("gemini-2.5-flash", description="Gemini Generative Model Name")
     
     # Project Settings
     api_title: str = "DocuMind AI Backend"
@@ -29,7 +29,7 @@ except Exception as e:
         gemini_api_key = "PLACEHOLDER_GEMINI_KEY"
         pinecone_api_key = "PLACEHOLDER_PINECONE_KEY"
         pinecone_index_name = "documind"
-        gemini_model_name = "gemini-1.5-flash"
+        gemini_model_name = "gemini-2.5-flash"
         api_title = "DocuMind AI Backend (Development Mode)"
         api_version = "1.0.0"
     settings = DummySettings()
