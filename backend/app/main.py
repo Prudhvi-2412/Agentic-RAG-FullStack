@@ -8,6 +8,7 @@ from app.services.embedding import EmbeddingService
 from app.services.vectorstore import VectorStoreService
 from app.services.router import QueryRouter
 from app.services.chat import ChatService
+from app.services.reranker import GeminiReranker
 
 # 1. Setup system-wide structured logging
 setup_logging()
@@ -36,16 +37,19 @@ async def startup_event():
     pinecone_key = getattr(settings, "pinecone_api_key", "")
     index_name = getattr(settings, "pinecone_index_name", "documind")
     
+    model_name = getattr(settings, "gemini_model_name", "gemini-2.5-flash")
+    
     # Initialize services
     embedding_svc = EmbeddingService(api_key=gemini_key)
+    reranker_svc = GeminiReranker(api_key=gemini_key, model_name=model_name)
     
     vectorstore_svc = VectorStoreService(
         api_key=pinecone_key,
         index_name=index_name,
-        embedding_service=embedding_svc
+        embedding_service=embedding_svc,
+        reranker=reranker_svc
     )
     
-    model_name = getattr(settings, "gemini_model_name", "gemini-1.5-flash")
     doc_processor = DocumentProcessor(api_key=gemini_key, model_name=model_name)
     router_svc = QueryRouter(api_key=gemini_key, model_name=model_name)
     
@@ -61,6 +65,7 @@ async def startup_event():
     app.state.document_processor = doc_processor
     app.state.query_router = router_svc
     app.state.chat_service = chat_svc
+    app.state.reranker_service = reranker_svc
 
 # 3. Include endpoint routers
 app.include_router(document.router)

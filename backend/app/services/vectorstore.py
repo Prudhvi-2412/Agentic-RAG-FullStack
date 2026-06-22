@@ -1,10 +1,9 @@
 import re
 import math
-import json
-import asyncio
 from pinecone import Pinecone, ServerlessSpec
 from typing import List, Dict, Any, Optional
 from app.services.embedding import EmbeddingService
+from app.services.reranker import BaseReranker
 
 def calculate_bm25_scores(query: str, chunks: List[str]) -> List[float]:
     """
@@ -52,10 +51,11 @@ def calculate_bm25_scores(query: str, chunks: List[str]) -> List[float]:
     return scores
 
 class VectorStoreService:
-    def __init__(self, api_key: str, index_name: str, embedding_service: EmbeddingService):
+    def __init__(self, api_key: str, index_name: str, embedding_service: EmbeddingService, reranker: BaseReranker):
         self.pc = Pinecone(api_key=api_key)
         self.index_name = index_name
         self.embedding_service = embedding_service
+        self.reranker = reranker
         self.dimension = 768  # text-embedding-004 outputs 768-dimensional vectors
         
         # Verify index existence, creating if necessary
@@ -110,86 +110,7 @@ class VectorStoreService:
             batch = vectors[i : i + batch_size]
             self.index.upsert(vectors=batch)
 
-    async def rerank_with_llm(self, query: str, candidates: List[Dict[str, Any]], top_k: int = 4) -> List[Dict[str, Any]]:
-        """
-        Reranks candidate chunks using Gemini (Cross-Encoder style) to select the most relevant ones.
-        """
-        if not candidates:
-            return []
-            
-        # Limit to top 8 to control latency and token costs
-        candidates_to_rank = candidates[:8]
-        
-        # Format chunks for prompt
-        chunks_text = ""
-        for idx, cand in enumerate(candidates_to_rank):
-            chunks_text += f"[ID: {idx}] Document: {cand['filename']} (Page {cand.get('page_number', 'N/A')})\nContent: {cand['context']}\n---\n"
-            
-        prompt = f"""You are an expert search reranker. Your task is to select the top {top_k} most relevant candidate chunks to answer the User Query.
-        
-User Query: {query}
 
-Candidate Chunks:
-{chunks_text}
-
-Analyze the user's intent and select the candidate chunks that contain directly useful information to answer the query.
-Provide your response in JSON format matching this schema:
-{{
-  "ranked_ids": [integer, ...]
-}}
-List only the IDs (0-indexed) in order of relevance, with the most relevant first. Return at most {top_k} IDs.
-Do not include any explanation or markdown formatting outside the JSON."""
-
-        try:
-            from google.genai import types
-            loop = asyncio.get_event_loop()
-            
-            def call_gemini():
-                from app.core.retry import retry_with_backoff
-                return retry_with_backoff(
-                    self.embedding_service.client.models.generate_content,
-                    model="gemini-2.5-flash",
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        temperature=0.0
-                    )
-                )
-                
-            response = await loop.run_in_executor(None, call_gemini)
-            
-            # Clean potential codeblock wrappers
-            text = response.text.strip()
-            if text.startswith("```"):
-                text = re.sub(r'^```[a-zA-Z]*\n', '', text)
-                text = re.sub(r'\n```$', '', text)
-                text = text.strip()
-                
-            data = json.loads(text)
-            ranked_ids = data.get("ranked_ids", [])
-            
-            reranked = []
-            seen = set()
-            for idx_val in ranked_ids:
-                try:
-                    idx = int(idx_val)
-                    if 0 <= idx < len(candidates_to_rank) and idx not in seen:
-                        reranked.append(candidates_to_rank[idx])
-                        seen.add(idx)
-                except (ValueError, TypeError):
-                    continue
-            
-            # Fill remaining in original order
-            for idx, cand in enumerate(candidates):
-                if len(reranked) >= top_k:
-                    break
-                if cand not in reranked:
-                    reranked.append(cand)
-                    
-            return reranked[:top_k]
-        except Exception as e:
-            print(f"Gemini reranking failed: {e}. Falling back to hybrid score ranking.")
-            return candidates[:top_k]
 
     async def _expand_chunk_contexts(self, candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
@@ -319,7 +240,7 @@ Do not include any explanation or markdown formatting outside the JSON."""
             cand["relevance_score"] = cand.pop("combined_score")
 
         # 5. LLM-Based Reranking (Gemini Cross-Encoder)
-        reranked_candidates = await self.rerank_with_llm(query, candidates, top_k=top_k)
+        reranked_candidates = await self.reranker.rerank(query, candidates, top_k=top_k)
         
         # 6. Sentence-Window Context Expansion
         expanded_candidates = await self._expand_chunk_contexts(reranked_candidates)

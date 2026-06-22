@@ -1,15 +1,8 @@
-import io
 import re
-import uuid
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-# Graceful docx import
-try:
-    import docx
-except ImportError:
-    docx = None
+from app.services.parsers import PDFParser, DocxParser, TextParser
 
 class DocumentProcessor:
     def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-2.5-flash"):
@@ -36,6 +29,15 @@ class DocumentProcessor:
             separators=["\n\n", "\n", " ", ""]
         )
 
+        # Register parser strategies
+        self.parsers = {
+            "pdf": PDFParser(),
+            "docx": DocxParser(),
+            "txt": TextParser(),
+            "md": TextParser(),
+            "markdown": TextParser()
+        }
+
     def clean_text(self, text: str) -> str:
         """
         Cleans text content by normalizing whitespace and removing control characters.
@@ -53,105 +55,14 @@ class DocumentProcessor:
 
     def extract_text(self, file_bytes: bytes, filename: str) -> List[Dict[str, Any]]:
         """
-        Extracts raw text and visual layout details from file bytes.
-        Returns a list of dicts: [{"text": str, "page_number": int}]
+        Extracts raw text and visual layout details from file bytes using the registered parser.
         """
         ext = filename.split(".")[-1].lower()
-        pages: List[Dict[str, Any]] = []
-
-        if ext == "pdf":
-            import fitz  # PyMuPDF
-            import concurrent.futures
-            
-            # Open PDF from memory stream
-            doc = fitz.open(stream=file_bytes, filetype="pdf")
-            
-            def process_single_page(page_idx: int) -> Dict[str, Any]:
-                try:
-                    # Open a thread-local copy or use the main doc safely
-                    # (fitz page reads are generally safe if not modifying the structure)
-                    page = doc[page_idx]
-                    raw_text = page.get_text()
-                    visual_description = ""
-                    
-                    if self.client:
-                        try:
-                            from google.genai import types
-                            # Render page as a pixmap at 150 DPI for balance of detail and performance
-                            pix = page.get_pixmap(dpi=150)
-                            img_bytes = pix.tobytes("png")
-                            
-                            from app.core.retry import retry_with_backoff
-                            # Request visual OCR, table markdown conversion, and image descriptors with retry backoff
-                            response = retry_with_backoff(
-                                self.client.models.generate_content,
-                                model=self.model_name,
-                                contents=[
-                                    types.Part.from_bytes(
-                                        data=img_bytes,
-                                        mime_type='image/png'
-                                    ),
-                                    "Extract and describe all structural elements on this page. If there are tables, transcribe them in markdown format. If there are charts or diagrams, describe them in detail. If there are headers, signatures, or handwriting, mention them."
-                                ]
-                            )
-                            if response.text:
-                                visual_description = f"\n\n[Visual & Layout Analysis]:\n{response.text}"
-                        except Exception as ve:
-                            print(f"Failed to generate layout analysis for page {page_idx+1}: {ve}")
-                    
-                    return {
-                        "text": raw_text + visual_description,
-                        "page_number": page_idx + 1
-                    }
-                except Exception as pe:
-                    print(f"Error processing page {page_idx+1}: {pe}")
-                    return {"text": "", "page_number": page_idx + 1}
-            
-            # Use ThreadPoolExecutor to run page layout API calls in parallel (max 8 concurrent threads)
-            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-                # Map maintains page order
-                results = list(executor.map(process_single_page, range(doc.page_count)))
-                
-            pages.extend(results)
-            doc.close()
-
-            
-        elif ext == "docx":
-            if docx is None:
-                raise ImportError("python-docx is not installed. Unable to parse Word (.docx) files.")
-            doc = docx.Document(io.BytesIO(file_bytes))
-            
-            # Extract paragraphs
-            paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
-            
-            # Since Word docs don't have hardcoded physical pages, 
-            # we group every 10 paragraphs together to represent a "page" block
-            grouped_blocks = []
-            temp = []
-            for idx, p in enumerate(paragraphs):
-                temp.append(p)
-                if (idx + 1) % 10 == 0 or (idx + 1) == len(paragraphs):
-                    grouped_blocks.append("\n".join(temp))
-                    temp = []
-            
-            for idx, text in enumerate(grouped_blocks):
-                pages.append({
-                    "text": text,
-                    "page_number": idx + 1
-                })
-                
-        elif ext in ["txt", "md", "markdown"]:
-            text = file_bytes.decode("utf-8", errors="ignore")
-            # TXT and Markdown files are ingested as a single page (Page 1)
-            pages.append({
-                "text": text,
-                "page_number": 1
-            })
-            
-        else:
+        if ext not in self.parsers:
             raise ValueError(f"Unsupported file format: .{ext}")
-        
-        return pages
+            
+        parser = self.parsers[ext]
+        return parser.parse(file_bytes, filename, client=self.client, model_name=self.model_name)
 
     async def process_file(self, file_bytes: bytes, filename: str, document_id: str) -> List[Dict[str, Any]]:
         """
