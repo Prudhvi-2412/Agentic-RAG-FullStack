@@ -81,8 +81,10 @@ class DocumentProcessor:
                             pix = page.get_pixmap(dpi=150)
                             img_bytes = pix.tobytes("png")
                             
-                            # Request visual OCR, table markdown conversion, and image descriptors
-                            response = self.client.models.generate_content(
+                            from app.core.retry import retry_with_backoff
+                            # Request visual OCR, table markdown conversion, and image descriptors with retry backoff
+                            response = retry_with_backoff(
+                                self.client.models.generate_content,
                                 model=self.model_name,
                                 contents=[
                                     types.Part.from_bytes(

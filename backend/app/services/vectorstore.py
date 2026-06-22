@@ -145,7 +145,9 @@ Do not include any explanation or markdown formatting outside the JSON."""
             loop = asyncio.get_event_loop()
             
             def call_gemini():
-                return self.embedding_service.client.models.generate_content(
+                from app.core.retry import retry_with_backoff
+                return retry_with_backoff(
+                    self.embedding_service.client.models.generate_content,
                     model="gemini-2.5-flash",
                     contents=prompt,
                     config=types.GenerateContentConfig(

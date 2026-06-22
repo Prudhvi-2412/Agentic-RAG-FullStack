@@ -24,7 +24,9 @@ Query: {query}
 
 Hypothetical Answer:"""
         try:
-            response = self.client.models.generate_content(
+            from app.core.retry import retry_with_backoff
+            response = retry_with_backoff(
+                self.client.models.generate_content,
                 model="gemini-2.5-flash",
                 contents=prompt
             )
@@ -46,7 +48,9 @@ Hypothetical Answer:"""
 
         # Helper to get embedding from Gemini
         def _embed(txt: str) -> List[float]:
-            response = self.client.models.embed_content(
+            from app.core.retry import retry_with_backoff
+            response = retry_with_backoff(
+                self.client.models.embed_content,
                 model=self.model_name,
                 contents=txt,
                 config=types.EmbedContentConfig(
@@ -83,7 +87,9 @@ Hypothetical Answer:"""
         """
         if not texts:
             return []
-        response = self.client.models.embed_content(
+        from app.core.retry import retry_with_backoff
+        response = retry_with_backoff(
+            self.client.models.embed_content,
             model=self.model_name,
             contents=texts,
             config=types.EmbedContentConfig(

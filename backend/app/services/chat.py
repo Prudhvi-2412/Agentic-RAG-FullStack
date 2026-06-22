@@ -88,7 +88,9 @@ Answer:"""
             loop = asyncio.get_event_loop()
             
             def generate():
-                return self.client.models.generate_content_stream(
+                from app.core.retry import retry_with_backoff
+                return retry_with_backoff(
+                    self.client.models.generate_content_stream,
                     model=self.model_name,
                     contents=prompt
                 )

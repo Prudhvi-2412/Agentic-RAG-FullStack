@@ -33,8 +33,10 @@ User Query: "{query}"
 Classification:"""
 
         try:
-            # Generate classification response using zero-shot prompt under temperature 0.0
-            response = self.client.models.generate_content(
+            from app.core.retry import retry_with_backoff
+            # Generate classification response using zero-shot prompt under temperature 0.0 with retry backoff
+            response = retry_with_backoff(
+                self.client.models.generate_content,
                 model=self.model_name,
                 contents=prompt,
                 config=types.GenerateContentConfig(temperature=0.0)
@@ -76,7 +78,9 @@ Follow-up Question: {query}
 Standalone Question (Respond with ONLY the standalone question, no explanation, no formatting):"""
 
         try:
-            response = self.client.models.generate_content(
+            from app.core.retry import retry_with_backoff
+            response = retry_with_backoff(
+                self.client.models.generate_content,
                 model=self.model_name,
                 contents=prompt,
                 config=types.GenerateContentConfig(temperature=0.0)
