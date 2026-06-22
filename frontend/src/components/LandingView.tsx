@@ -151,46 +151,46 @@ export const LandingView: React.FC<LandingViewProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="p-6 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 rounded-2xl border border-slate-250 dark:border-slate-800 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all group">
               <h4 className="font-bold text-slate-800 dark:text-slate-250 mb-2 text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                Unbounded Context Scale
+                Parallel Visual Ingestion
               </h4>
               <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
-                Standard LLM chats hit token boundaries or experience high latency when uploading multiple large files. DocuMind chunks and indexes your entire collection, querying only the relevant segments to answer queries instantly.
+                Instead of slow sequential readers, DocuMind uses concurrent multi-threaded visual OCR pipelines (up to 8 pages processed in parallel). Page layouts, tables, and charts are transcribed into structured Markdown instantly.
               </p>
             </div>
 
             <div className="p-6 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 rounded-2xl border border-slate-250 dark:border-slate-800 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all group">
               <h4 className="font-bold text-slate-800 dark:text-slate-250 mb-2 text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                Visual & Structural Grounding
+                Hybrid Dense-Sparse RAG
               </h4>
               <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
-                Generic file readers parse documents as flat text streams, stripping out visual layout context. DocuMind's visual OCR pipeline translates tables, charts, and diagrams into structured data before vector mapping.
+                We combine 768-dimensional dense vector embeddings with a local BM25 keyword matching engine. This captures both conceptual intent and exact keyword matches, ranking them with a Gemini-powered Cross-Encoder reranker.
               </p>
             </div>
 
             <div className="p-6 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 rounded-2xl border border-slate-250 dark:border-slate-800 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all group">
               <h4 className="font-bold text-slate-800 dark:text-slate-250 mb-2 text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                Deterministic Source Mappings
+                Interactive Citation Mapping
               </h4>
               <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
-                Rather than merging paragraphs or hallucinating source references, the RAG engine tracks and tags each extracted embedding to its exact page and segment, linking citations side-by-side with assistant responses.
+                Every sentence is grounded with physical page numbers. Clicking inline citations (e.g. [1], [2]) in the chat smoothly scrolls the Citations panel and triggers a glowing pulse overlay to highlight the raw source chunk.
               </p>
             </div>
 
             <div className="p-6 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 rounded-2xl border border-slate-250 dark:border-slate-800 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all group md:col-span-1">
               <h4 className="font-bold text-slate-800 dark:text-slate-250 mb-2 text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                Intent-Based Routing
+                History-Aware Condensation
               </h4>
               <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
-                Bypasses vector search for conversational or generic queries using an intelligent zero-shot classifier, preventing database lookup delays and ensuring highly focused context selection.
+                DocuMind keeps track of prior conversational turns. Follow-up queries are automatically condensed into standalone questions using Gemini before searching, ensuring full contextual continuity throughout long chat sessions.
               </p>
             </div>
 
             <div className="p-6 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 rounded-2xl border border-slate-250 dark:border-slate-800 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all group md:col-span-2">
               <h4 className="font-bold text-slate-800 dark:text-slate-250 mb-2 text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                Private Sandbox Data Security
+                JWT-Isolated Multi-Tenancy
               </h4>
               <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
-                Commercial public LLM chat portals may store and train on uploaded proprietary files. In DocuMind, your data remains secure in your private Pinecone namespace and Supabase session, isolated from public training cycles.
+                Unlike public LLMs that share data, DocuMind enforces strict data isolation. Requests are secured with stateless Supabase JWT tokens, restricting Pinecone upserts and vector queries exclusively to your user ID.
               </p>
             </div>
           </div>
