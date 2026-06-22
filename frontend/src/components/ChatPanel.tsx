@@ -1,6 +1,8 @@
 import React from 'react';
-import { Sparkles, Send, Info } from 'lucide-react';
+import { Sparkles, Send, Info, Volume2, VolumeX, Mic } from 'lucide-react';
 import { ChatSession } from '../types';
+import { useAudio } from '../hooks/useAudio';
+import { VoiceController } from './VoiceController';
 
 interface ChatPanelProps {
   activeSession: ChatSession;
@@ -25,8 +27,26 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   handleSendMessage,
   chatBottomRef,
 }) => {
+  const {
+    ttsLanguage,
+    setTtsLanguage,
+    ttsGender,
+    setTtsGender,
+    ttsRate,
+    setTtsRate,
+    isPlaying,
+    isLoadingAudio,
+    activeSpeechText,
+    playTTS,
+    stopTTS,
+    isListening,
+    sttLanguage,
+    setSttLanguage,
+    toggleSpeechToText
+  } = useAudio();
+
   const messages = activeSession.messages;
-  
+
   const handleCitationClick = (chunkId: string) => {
     const element = document.getElementById(`citation-${chunkId}`);
     if (element) {
@@ -44,15 +64,15 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     let lastIndex = 0;
     const citationRegex = /\[(\d+)\]/g;
     let match;
-    
+
     while ((match = citationRegex.exec(text)) !== null) {
       const matchIndex = match.index;
       const citationNumber = parseInt(match[1], 10);
-      
+
       if (matchIndex > lastIndex) {
         parts.push(text.substring(lastIndex, matchIndex));
       }
-      
+
       if (sources && citationNumber >= 1 && citationNumber <= sources.length) {
         const source = sources[citationNumber - 1];
         parts.push(
@@ -68,14 +88,14 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       } else {
         parts.push(match[0]);
       }
-      
+
       lastIndex = citationRegex.lastIndex;
     }
-    
+
     if (lastIndex < text.length) {
       parts.push(text.substring(lastIndex));
     }
-    
+
     return parts.length > 0 ? parts : text;
   };
 
@@ -113,7 +133,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
   return (
     <section className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-950 h-full overflow-hidden">
-      
+
       {/* Chat Header */}
       <div className="px-6 py-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between flex-shrink-0">
         <div>
@@ -124,35 +144,80 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           </div>
         </div>
 
-        {/* Routing Status indicator */}
-        {currentQueryType && (
-          <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
-            currentQueryType === 'DOCUMENT_QUERY'
-              ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border-blue-100 dark:border-blue-900/50'
-              : 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-900/50'
-          }`}>
-            <Sparkles className="h-3.5 w-3.5" />
-            <span>Route: {currentQueryType}</span>
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          {/* Routing Status indicator */}
+          {currentQueryType && (
+            <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${currentQueryType === 'DOCUMENT_QUERY'
+                ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border-blue-100 dark:border-blue-900/50'
+                : 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-900/50'
+              }`}>
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>Route: {currentQueryType}</span>
+            </div>
+          )}
+          
+          <VoiceController
+            ttsLanguage={ttsLanguage}
+            setTtsLanguage={setTtsLanguage}
+            ttsGender={ttsGender}
+            setTtsGender={setTtsGender}
+            ttsRate={ttsRate}
+            setTtsRate={setTtsRate}
+            isPlaying={isPlaying}
+            isLoadingAudio={isLoadingAudio}
+            stopTTS={stopTTS}
+            isListening={isListening}
+            sttLanguage={sttLanguage}
+            setSttLanguage={setSttLanguage}
+          />
+        </div>
       </div>
 
       {/* Conversational Bubbles Area */}
       <div className="flex-1 overflow-y-auto px-6 py-6 flex flex-col gap-6">
         {messages.map((msg) => (
-          <div 
+          <div
             key={msg.id}
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
-            <div className={`max-w-xl rounded-2xl px-5 py-3.5 shadow-sm text-sm border ${
-              msg.role === 'user'
+            <div className={`max-w-xl rounded-2xl px-5 py-3.5 shadow-sm text-sm border ${msg.role === 'user'
                 ? 'bg-blue-600 text-white border-blue-600 rounded-tr-none'
                 : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800 rounded-tl-none leading-relaxed'
-            }`}>
+              }`}>
               {msg.role === 'assistant' ? (
                 /* Text layout supporting basic formatting styles */
                 <div className="prose prose-sm max-w-none dark:prose-invert text-slate-800 dark:text-slate-200">
                   {renderMessageTextWithCitations(msg.text, activeSession.sources)}
+                  
+                  <div className="mt-3.5 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                    <div className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                      Assistant Response
+                    </div>
+                    <button
+                      onClick={() => playTTS(msg.text)}
+                      disabled={isLoadingAudio && activeSpeechText === msg.text}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border transition-all ${
+                        isPlaying && activeSpeechText === msg.text
+                          ? 'bg-rose-500 text-white border-rose-500 hover:bg-rose-600'
+                          : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      {isLoadingAudio && activeSpeechText === msg.text ? (
+                        <span className="h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"></span>
+                      ) : isPlaying && activeSpeechText === msg.text ? (
+                        <VolumeX className="h-3.5 w-3.5" />
+                      ) : (
+                        <Volume2 className="h-3.5 w-3.5" />
+                      )}
+                      <span>
+                        {isLoadingAudio && activeSpeechText === msg.text 
+                          ? 'Generating...' 
+                          : isPlaying && activeSpeechText === msg.text 
+                            ? 'Mute' 
+                            : 'Read Aloud'}
+                      </span>
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <p>{msg.text}</p>
@@ -199,13 +264,28 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             placeholder={
-              isUploading 
-                ? "Indexing in progress..." 
+              isUploading
+                ? "Indexing in progress..."
+                : isListening
+                ? "Listening... Speak now..."
                 : "Ask a question about longevity, ikigai, machine learning, or general topics..."
             }
             disabled={isStreaming || isUploading}
-            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-3.5 pl-4 pr-12 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 transition-all font-medium disabled:opacity-60"
+            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-3.5 pl-4 pr-20 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 transition-all font-medium disabled:opacity-60"
           />
+          <button
+            type="button"
+            onClick={() => toggleSpeechToText((text) => setInputValue(prev => prev ? prev + ' ' + text : text))}
+            disabled={isStreaming || isUploading}
+            className={`absolute right-12 p-2 rounded-lg transition-all ${
+              isListening
+                ? 'bg-red-500 text-white animate-pulse'
+                : 'text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+            title="Speech to Text (Voice Input)"
+          >
+            <Mic className="h-4 w-4" />
+          </button>
           <button
             type="submit"
             disabled={!inputValue.trim() || isStreaming || isUploading}

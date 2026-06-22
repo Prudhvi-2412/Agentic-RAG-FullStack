@@ -103,6 +103,70 @@ sequenceDiagram
 
 ---
 
+## 🔊 Multilingual Text-to-Speech (TTS) Pipeline
+
+When a user clicks "Read Aloud" on any assistant response:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant App as React Frontend (useAudio)
+    participant API as FastAPI Backend (tts route)
+    participant Service as TTSService
+    participant Cache as Local TTS Cache (MP3s)
+    participant MS as MS Edge Neural TTS API
+    
+    User->>App: Click Speaker Icon (Read Aloud)
+    App->>API: POST /api/tts { text, language, gender, rate }
+    API->>Service: stream_audio(text, lang, gender, rate)
+    Service->>Service: Compute MD5 Hash of settings
+    alt Cache file exists (HIT)
+        Service->>Cache: Read cached file bytes
+        Cache-->>Service: Audio stream
+        Service-->>API: Stream cache chunks
+        API-->>App: Audio/mpeg binary stream
+    else Cache file missing (MISS)
+        Service->>MS: Initiate async stream (edge_tts)
+        loop Stream synthesis chunks
+            MS-->>Service: Chunk bytes
+            Service->>Cache: Write chunk to disk
+            Service-->>API: Yield chunk
+            API-->>App: Audio/mpeg binary stream
+        end
+    end
+    App->>App: Play binary stream in HTML5 Audio
+    App-->>User: Hear spoken voice (selected dialect)
+```
+
+---
+
+## 🎤 Speech-to-Text (STT) Voice Input Flow
+
+When a user clicks the Microphone button to dictate their query:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant App as React Frontend (ChatPanel)
+    participant WebSpeech as Web Speech API (Browser Native)
+    
+    User->>App: Click Microphone (🎤) button
+    App->>WebSpeech: Initialize SpeechRecognition (continuous=false)
+    App->>WebSpeech: Set recognition locale (e.g., ta-IN, de-DE, es-ES)
+    App->>WebSpeech: start()
+    WebSpeech-->>App: Listening state active (pulsing indicator)
+    User->>App: Speak into microphone
+    App->>WebSpeech: Audio input
+    WebSpeech->>WebSpeech: Transcribe voice to text local engine
+    WebSpeech-->>App: onresult(transcript text)
+    App->>App: Append transcript to chat input field
+    WebSpeech-->>App: onend() (deactivate listening state)
+```
+
+---
+
 ## 🎨 UI Wireframe Layout
 
 The divided modular frontend displays a split-screen dashboard workspace:
@@ -130,5 +194,6 @@ The divided modular frontend displays a split-screen dashboard workspace:
 
 *   **Header**: Coordinates views switcher between landing page and workspace.
 *   **Sidebar (`components/Sidebar.tsx`)**: Controls PDF document loading upload state, chat sessions, and checkboxes to isolate metadata filters.
-*   **Chat Panel (`components/ChatPanel.tsx`)**: Streams conversational turns, displays reasoning classification pathways, and manages inputs.
+*   **Chat Panel (`components/ChatPanel.tsx`)**: Streams conversational turns, displays reasoning classification pathways, manages inputs, and integrates audio player components.
+*   **Voice Controller (`components/VoiceController.tsx`)**: Floating menu dropdown managing speech options (TTS voice dialect, gender, rate, and STT locale).
 *   **Citations Panel (`components/CitationsPanel.tsx`)**: Shows active source citations matching the retrieved vectors.

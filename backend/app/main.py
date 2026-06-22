@@ -2,13 +2,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.logging import setup_logging
-from app.routes import document, chat
+from app.routes import document, chat, tts
 from app.services.document import DocumentProcessor
 from app.services.embedding import EmbeddingService
 from app.services.vectorstore import VectorStoreService
 from app.services.router import QueryRouter
 from app.services.chat import ChatService
 from app.services.reranker import GeminiReranker
+from app.services.tts import TTSService
 
 # 1. Setup system-wide structured logging
 setup_logging()
@@ -59,6 +60,8 @@ async def startup_event():
         model_name=model_name
     )
     
+    tts_svc = TTSService()
+    
     # Store instances in app state for request-level route sharing
     app.state.embedding_service = embedding_svc
     app.state.vector_store_service = vectorstore_svc
@@ -66,10 +69,12 @@ async def startup_event():
     app.state.query_router = router_svc
     app.state.chat_service = chat_svc
     app.state.reranker_service = reranker_svc
+    app.state.tts_service = tts_svc
 
 # 3. Include endpoint routers
 app.include_router(document.router)
 app.include_router(chat.router)
+app.include_router(tts.router)
 
 @app.get("/")
 def read_root():

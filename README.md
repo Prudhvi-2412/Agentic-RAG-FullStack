@@ -129,7 +129,20 @@ Full system-level dark/light mode toggle via `Header.tsx`:
 - Uses Tailwind's `dark:` class system applied at root level
 - Sun/Moon icon toggle with amber/slate color theming
 
-### 10. 🚀 CI/CD Pipeline (GitHub Actions + Render)
+### 10. 🔊 Multilingual Text-to-Speech (TTS) Narration
+High-fidelity neural speech synthesis built into the assistant response bubbles:
+- **Languages supported**: European (German, French, Spanish, Italian, Portuguese) and Indian regional (Tamil, Telugu, Malayalam, Kannada, Marathi) plus English.
+- **Dynamic Controls**: Select speed/rate (0.8x to 1.5x) and voice gender (Male/Female neural models).
+- **Latency Optimization**: Streams audio chunks via FastAPI `StreamingResponse` for immediate playback.
+- **Scale Caching**: Automatically hashes text and voice configurations to save and serve cached MP3 files on repeated requests, reducing external network overhead.
+
+### 11. 🎤 Hands-Free Speech-to-Text (STT) Input
+Voice typing capabilities integrated directly inside the conversational input toolbar:
+- Uses the standard web-browser **Web Speech API** for instant, client-side transcriptions without any extra API keys.
+- Auto-localizes speech recognition to match the selected target language (e.g. `ta-IN` for Tamil, `de-DE` for German).
+- Pulsing microphone status indicator and typing overlays.
+
+### 12. 🚀 CI/CD Pipeline (GitHub Actions + Render)
 Automated deployment pipeline via `.github/workflows/`:
 - Triggers on `push` to `main` and on pull requests
 - Runs backend Python tests and frontend TypeScript build validation
@@ -233,6 +246,7 @@ The landing page explicitly surfaces the key differentiators in a 3+2 bento-grid
 | Lucide React | Icon library |
 | Supabase JS Client | Auth SDK + session management |
 | EventSource API | SSE streaming from backend |
+| Web Speech API | Client-side Speech-to-Text translation (browser native) |
 
 ### Backend
 | Technology | Purpose |
@@ -243,6 +257,7 @@ The landing page explicitly surfaces the key differentiators in a 3+2 bento-grid
 | LangChain Text Splitters | Recursive character chunking (750 tokens / 150 overlap) |
 | Pydantic V2 | Request/response schema validation |
 | `python-dotenv` | Environment variable loading |
+| `edge-tts` | Async Microsoft Azure Neural TTS engine integration |
 
 ### AI & Cloud APIs
 | Service | SDK | Role |
@@ -251,6 +266,7 @@ The landing page explicitly surfaces the key differentiators in a 3+2 bento-grid
 | Google text-embedding-004 | `google-genai` | 768-dimensional dense vector embeddings |
 | Pinecone Serverless | `pinecone` | Vector storage, cosine similarity search, metadata filtering |
 | Supabase | `supabase-js` | User authentication, Google OAuth |
+| MS Edge Neural Voices | `edge-tts` | Multilingual high-fidelity audio synthesis |
 
 ### DevOps
 | Tool | Purpose |
@@ -272,15 +288,17 @@ Agentic-RAG-FullStack/
 │   │   ├── core/
 │   │   │   ├── config.py    # Settings loader (reads .env via pydantic)
 │   │   │   └── logging.py   # Structured logging setup
-│   │   ├── models/          # Pydantic request/response schema models
+│   │   ├── models/          # Pydantic models (chat.py, document.py, tts.py)
 │   │   ├── routes/
 │   │   │   ├── chat.py      # POST /api/query — SSE streaming endpoint
-│   │   │   └── document.py  # POST /api/upload, GET /api/documents, DELETE /api/documents/{id}
+│   │   │   ├── document.py  # POST /api/upload, GET /api/documents, DELETE /api/documents/{id}
+│   │   │   └── tts.py       # POST /api/tts — Speech synthesis stream endpoint
 │   │   ├── services/
 │   │   │   ├── chat.py      # ChatService — SSE orchestrator & Gemini chat stream
 │   │   │   ├── document.py  # DocumentProcessor — PDF/DOCX/TXT extraction + Gemini Vision
 │   │   │   ├── embedding.py # EmbeddingService — text-embedding-004 via google-genai
 │   │   │   ├── router.py    # QueryRouter — zero-shot intent classifier
+│   │   │   ├── tts.py       # TTSService — edge-tts synthesis + caching engine
 │   │   │   └── vectorstore.py # VectorStoreService — Pinecone upsert, hybrid search, delete
 │   │   └── main.py          # FastAPI app + startup DI + CORS config
 │   ├── requirements.txt
@@ -289,11 +307,17 @@ Agentic-RAG-FullStack/
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── AuthModal.tsx     # Sign In/Sign Up modal + Google OAuth
-│   │   │   ├── ChatPanel.tsx     # Streaming chat interface
+│   │   │   ├── ChatPanel.tsx     # Streaming chat interface with voice integrations
 │   │   │   ├── CitationsPanel.tsx # Source attribution panel
 │   │   │   ├── Header.tsx        # Navigation header + dark mode + auth state
 │   │   │   ├── LandingView.tsx   # Landing page hero + feature cards + comparison section
-│   │   │   └── Sidebar.tsx       # Document management + chat sessions
+│   │   │   ├── Sidebar.tsx       # Document management + chat sessions
+│   │   │   └── VoiceController.tsx # Voice panel settings (TTS settings + STT settings)
+│   │   ├── hooks/
+│   │   │   ├── useAuth.ts
+│   │   │   ├── useDocuments.ts
+│   │   │   ├── useChat.ts
+│   │   │   └── useAudio.ts       # Audio controls state & WebSpeech recognition manager
 │   │   ├── types/               # TypeScript interface definitions
 │   │   ├── supabaseClient.ts    # Supabase client initialization
 │   │   ├── App.tsx              # Root orchestrator — view routing + state management
