@@ -58,7 +58,7 @@ export const CitationsPanel: React.FC<CitationsPanelProps> = ({
               <span className="text-[10px] font-bold text-blue-700 dark:text-blue-400 uppercase tracking-wide">Grounded Attributions Ready</span>
             </div>
 
-            {retrievedSources.map((source, index) => (
+            {retrievedSources.map((source) => (
               <div 
                 key={source.chunk_id}
                 id={`citation-${source.chunk_id}`}
