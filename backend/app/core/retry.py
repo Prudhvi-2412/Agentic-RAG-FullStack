@@ -1,7 +1,14 @@
 import time
 import asyncio
-from google.api_core.exceptions import ResourceExhausted
 from google.genai.errors import APIError
+
+try:
+    from google.api_core.exceptions import ResourceExhausted
+except ImportError:
+    # Fallback dummy exception class if google-api-core is not installed in this environment
+    class ResourceExhausted(Exception):
+        pass
+
 
 def retry_with_backoff(func, *args, max_retries=5, initial_delay=2, backoff_factor=2, **kwargs):
     """
