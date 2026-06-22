@@ -64,8 +64,6 @@ Hypothetical Answer:"""
                 hyde_txt = self.generate_hyde_text(text)
                 hyde_emb = _embed(hyde_txt)
                 # 3. Fuse embeddings (0.5 query + 0.5 HyDE)
-                final_emb = [0.5 * q + 0.5 * h for q, h in zip(query_emb, idx_val) for q, idx_val in [(query_emb, hyde_emb)]]
-                # Wait, let's write zip directly:
                 final_emb = [0.5 * q + 0.5 * h for q, h in zip(query_emb, hyde_emb)]
                 self.query_cache[cache_key] = final_emb
                 return final_emb
