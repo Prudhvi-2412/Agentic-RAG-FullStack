@@ -1,9 +1,15 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
+class MessageHistoryItem(BaseModel):
+    role: str = Field(..., description="Message author role: user or assistant")
+    text: str = Field(..., description="Message text content")
+
 class QueryRequest(BaseModel):
     query: str = Field(..., min_length=1, description="The user's query or conversation prompt")
     filters: Optional[List[str]] = Field(None, description="Optional list of filenames to restrict the RAG vector search space")
+    history: Optional[List[MessageHistoryItem]] = Field(None, description="Prior message history context")
+
 
 class SourceCitation(BaseModel):
     filename: str = Field(..., description="Name of the source document file")

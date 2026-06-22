@@ -1,11 +1,13 @@
-from fastapi import APIRouter, File, UploadFile, HTTPException, Request
+from fastapi import APIRouter, File, UploadFile, HTTPException, Request, Header
 from app.models.document import DocumentUploadResponse
+from app.core.auth import get_user_id_from_header
+from typing import Optional
 import uuid
 
 router = APIRouter(prefix="/api")
 
 @router.post("/upload", response_model=DocumentUploadResponse)
-async def upload_document(request: Request, file: UploadFile = File(...)):
+async def upload_document(request: Request, file: UploadFile = File(...), authorization: Optional[str] = Header(None)):
     """
     Ingests an uploaded file (PDF, DOCX, TXT, MD), parses text page-by-page,
     generates embeddings, and indexes them into Pinecone.
@@ -27,6 +29,9 @@ async def upload_document(request: Request, file: UploadFile = File(...)):
 
     document_id = str(uuid.uuid4())
     
+    # Decode user ID if Authorization header is present
+    user_id = get_user_id_from_header(authorization)
+    
     # Retrieve singletons from app state
     processor = request.app.state.document_processor
     vectorstore = request.app.state.vector_store_service
@@ -40,8 +45,8 @@ async def upload_document(request: Request, file: UploadFile = File(...)):
                 detail="No readable text contents could be parsed from this document. Please verify the file is not empty or scanned image only."
             )
 
-        # Vector database upserting
-        await vectorstore.upsert_chunks(chunks)
+        # Vector database upserting (pass user_id for multi-tenancy)
+        await vectorstore.upsert_chunks(chunks, user_id=user_id)
 
         return DocumentUploadResponse(
             document_id=document_id,
@@ -56,16 +61,19 @@ async def upload_document(request: Request, file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Pipeline ingestion failed: {str(e)}")
 
 @router.delete("/documents/{document_id}")
-async def delete_document_endpoint(request: Request, document_id: str):
+async def delete_document_endpoint(request: Request, document_id: str, authorization: Optional[str] = Header(None)):
     """
     Deletes all indexed vectors associated with a document_id from Pinecone.
     """
     vectorstore = request.app.state.vector_store_service
+    user_id = get_user_id_from_header(authorization)
     try:
-        await vectorstore.delete_document(document_id)
+        # Pass user_id to ensure a user can only delete their own documents
+        await vectorstore.delete_document(document_id, user_id=user_id)
         return {"status": "success", "message": f"Document {document_id} deleted from Pinecone"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete document: {str(e)}")
+
 
 import os
 

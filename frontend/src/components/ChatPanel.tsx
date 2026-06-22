@@ -27,6 +27,90 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 }) => {
   const messages = activeSession.messages;
   
+  const handleCitationClick = (chunkId: string) => {
+    const element = document.getElementById(`citation-${chunkId}`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      // Add visual border highlight and pulse animation
+      element.classList.add('ring-2', 'ring-blue-500', 'animate-pulse');
+      setTimeout(() => {
+        element.classList.remove('ring-2', 'ring-blue-500', 'animate-pulse');
+      }, 2000);
+    }
+  };
+
+  const renderInlineCitations = (text: string, sources: any[]) => {
+    const parts = [];
+    let lastIndex = 0;
+    const citationRegex = /\[(\d+)\]/g;
+    let match;
+    
+    while ((match = citationRegex.exec(text)) !== null) {
+      const matchIndex = match.index;
+      const citationNumber = parseInt(match[1], 10);
+      
+      if (matchIndex > lastIndex) {
+        parts.push(text.substring(lastIndex, matchIndex));
+      }
+      
+      if (sources && citationNumber >= 1 && citationNumber <= sources.length) {
+        const source = sources[citationNumber - 1];
+        parts.push(
+          <button
+            key={matchIndex}
+            onClick={() => handleCitationClick(source.chunk_id)}
+            className="inline-flex items-center justify-center px-1.5 py-0.5 mx-0.5 text-[9px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800 rounded hover:scale-105 active:scale-95 transition-all cursor-pointer select-none align-middle"
+            title={`${source.filename} (Page ${source.page_number || 'N/A'})`}
+          >
+            {citationNumber}
+          </button>
+        );
+      } else {
+        parts.push(match[0]);
+      }
+      
+      lastIndex = citationRegex.lastIndex;
+    }
+    
+    if (lastIndex < text.length) {
+      parts.push(text.substring(lastIndex));
+    }
+    
+    return parts.length > 0 ? parts : text;
+  };
+
+  const renderMessageTextWithCitations = (text: string, sources: any[]) => {
+    return text.split('\n').map((paragraph, pIndex) => {
+      if (paragraph.startsWith('- ') || paragraph.startsWith('* ')) {
+        const bulletText = paragraph.substring(2);
+        return (
+          <li key={pIndex} className="ml-4 list-disc mt-1">
+            {renderInlineCitations(bulletText, sources)}
+          </li>
+        );
+      }
+      if (paragraph.startsWith('### ')) {
+        return (
+          <h4 key={pIndex} className="text-base font-bold text-slate-900 dark:text-slate-100 mt-3 mb-1">
+            {paragraph.substring(4)}
+          </h4>
+        );
+      }
+      if (paragraph.startsWith('**') && paragraph.endsWith('**')) {
+        return (
+          <p key={pIndex} className="font-bold text-slate-800 dark:text-slate-200 mt-2">
+            {renderInlineCitations(paragraph.replace(/\*\*/g, ''), sources)}
+          </p>
+        );
+      }
+      return (
+        <p key={pIndex} className="mt-2">
+          {renderInlineCitations(paragraph, sources)}
+        </p>
+      );
+    });
+  };
+
   return (
     <section className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-950 h-full overflow-hidden">
       
@@ -68,18 +152,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
               {msg.role === 'assistant' ? (
                 /* Text layout supporting basic formatting styles */
                 <div className="prose prose-sm max-w-none dark:prose-invert text-slate-800 dark:text-slate-200">
-                  {msg.text.split('\n').map((paragraph, index) => {
-                    if (paragraph.startsWith('- ') || paragraph.startsWith('* ')) {
-                      return <li key={index} className="ml-4 list-disc mt-1">{paragraph.substring(2)}</li>;
-                    }
-                    if (paragraph.startsWith('### ')) {
-                      return <h4 key={index} className="text-base font-bold text-slate-900 dark:text-slate-100 mt-3 mb-1">{paragraph.substring(4)}</h4>;
-                    }
-                    if (paragraph.startsWith('**') && paragraph.endsWith('**')) {
-                      return <p key={index} className="font-bold text-slate-800 dark:text-slate-200 mt-2">{paragraph.replace(/\*\*/g, '')}</p>;
-                    }
-                    return <p key={index} className="mt-2">{paragraph}</p>;
-                  })}
+                  {renderMessageTextWithCitations(msg.text, activeSession.sources)}
                 </div>
               ) : (
                 <p>{msg.text}</p>
@@ -93,17 +166,13 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           <div className="flex justify-start">
             <div className="max-w-xl rounded-2xl px-5 py-3.5 shadow-sm text-sm border bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800 rounded-tl-none leading-relaxed">
               <div className="prose prose-sm max-w-none dark:prose-invert text-slate-800 dark:text-slate-200">
-                {currentStreamText.split('\n').map((paragraph, index) => {
-                  if (paragraph.startsWith('- ') || paragraph.startsWith('* ')) {
-                    return <li key={index} className="ml-4 list-disc mt-1">{paragraph.substring(2)}</li>;
-                  }
-                  return <p key={index} className="mt-2">{paragraph}</p>;
-                })}
+                {renderMessageTextWithCitations(currentStreamText, activeSession.sources)}
               </div>
               <span className="inline-block h-3 w-1.5 bg-blue-500 animate-pulse ml-0.5 align-middle"></span>
             </div>
           </div>
         )}
+
 
         {/* Thinking/Loading skeleton loader */}
         {isStreaming && !currentStreamText && (

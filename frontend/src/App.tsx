@@ -101,6 +101,43 @@ export default function App() {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, currentStreamText]);
 
+  // Guest persistence loading from localStorage on mount/when guest mode active
+  useEffect(() => {
+    if (!user) {
+      const savedSessions = localStorage.getItem('guestChatSessions');
+      const savedActiveId = localStorage.getItem('guestActiveSessionId');
+      if (savedSessions) {
+        try {
+          const parsed = JSON.parse(savedSessions);
+          if (parsed && parsed.length > 0) {
+            setChatSessions(parsed);
+            if (savedActiveId && parsed.some((s: any) => s.id === savedActiveId)) {
+              setActiveSessionId(savedActiveId);
+            } else {
+              setActiveSessionId(parsed[0].id);
+            }
+          }
+        } catch (e) {
+          console.error('Error loading guest sessions:', e);
+        }
+      }
+    }
+  }, [user]);
+
+  // Persist guest sessions changes
+  useEffect(() => {
+    if (!user) {
+      localStorage.setItem('guestChatSessions', JSON.stringify(chatSessions));
+    }
+  }, [chatSessions, user]);
+
+  useEffect(() => {
+    if (!user) {
+      localStorage.setItem('guestActiveSessionId', activeSessionId);
+    }
+  }, [activeSessionId, user]);
+
+
   // Load User Data from Supabase
   const loadUserData = async (userId: string) => {
     try {
@@ -290,8 +327,13 @@ export default function App() {
     formData.append('file', file);
 
     try {
+      const session = (await supabase.auth.getSession()).data.session;
+      const headers: any = { 'Content-Type': 'multipart/form-data' };
+      if (session) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
       const response = await axios.post(`${BACKEND_URL}/api/upload`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: headers
       });
       
       const data = response.data;
@@ -348,7 +390,15 @@ export default function App() {
     // 2. For real user-uploaded docs: delete vectors from Pinecone permanently
     if (!IS_DEMO_DOC) {
       try {
-        await fetch(`${BACKEND_URL}/api/documents/${id}`, { method: 'DELETE' });
+        const session = (await supabase.auth.getSession()).data.session;
+        const headers: any = {};
+        if (session) {
+          headers['Authorization'] = `Bearer ${session.access_token}`;
+        }
+        await fetch(`${BACKEND_URL}/api/documents/${id}`, { 
+          method: 'DELETE',
+          headers: headers
+        });
       } catch (err) {
         console.error('Error deleting document vectors from Pinecone:', err);
       }
@@ -513,12 +563,24 @@ export default function App() {
     let accumulatedText = '';
 
     try {
+      const session = (await supabase.auth.getSession()).data.session;
+      const headers: any = { 'Content-Type': 'application/json' };
+      if (session) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+
+      const historyPayload = messages.map(m => ({
+        role: m.role,
+        text: m.text
+      }));
+
       const response = await fetch(`${BACKEND_URL}/api/query`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headers,
         body: JSON.stringify({ 
           query: queryText,
-          filters: activeFilters.length > 0 ? activeFilters : null
+          filters: activeFilters.length > 0 ? activeFilters : null,
+          history: historyPayload
         })
       });
 

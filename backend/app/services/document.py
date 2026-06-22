@@ -61,44 +61,58 @@ class DocumentProcessor:
 
         if ext == "pdf":
             import fitz  # PyMuPDF
+            import concurrent.futures
+            
             # Open PDF from memory stream
             doc = fitz.open(stream=file_bytes, filetype="pdf")
             
-            for page_idx in range(doc.page_count):
-                page = doc[page_idx]
-                raw_text = page.get_text()
+            def process_single_page(page_idx: int) -> Dict[str, Any]:
+                try:
+                    # Open a thread-local copy or use the main doc safely
+                    # (fitz page reads are generally safe if not modifying the structure)
+                    page = doc[page_idx]
+                    raw_text = page.get_text()
+                    visual_description = ""
+                    
+                    if self.client:
+                        try:
+                            from google.genai import types
+                            # Render page as a pixmap at 150 DPI for balance of detail and performance
+                            pix = page.get_pixmap(dpi=150)
+                            img_bytes = pix.tobytes("png")
+                            
+                            # Request visual OCR, table markdown conversion, and image descriptors
+                            response = self.client.models.generate_content(
+                                model=self.model_name,
+                                contents=[
+                                    types.Part.from_bytes(
+                                        data=img_bytes,
+                                        mime_type='image/png'
+                                    ),
+                                    "Extract and describe all structural elements on this page. If there are tables, transcribe them in markdown format. If there are charts or diagrams, describe them in detail. If there are headers, signatures, or handwriting, mention them."
+                                ]
+                            )
+                            if response.text:
+                                visual_description = f"\n\n[Visual & Layout Analysis]:\n{response.text}"
+                        except Exception as ve:
+                            print(f"Failed to generate layout analysis for page {page_idx+1}: {ve}")
+                    
+                    return {
+                        "text": raw_text + visual_description,
+                        "page_number": page_idx + 1
+                    }
+                except Exception as pe:
+                    print(f"Error processing page {page_idx+1}: {pe}")
+                    return {"text": "", "page_number": page_idx + 1}
+            
+            # Use ThreadPoolExecutor to run page layout API calls in parallel (max 8 concurrent threads)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+                # Map maintains page order
+                results = list(executor.map(process_single_page, range(doc.page_count)))
                 
-                # If Gemini client is active, render and transcribe layout/images/tables
-                visual_description = ""
-                if self.client:
-                    try:
-                        from google.genai import types
-                        # Render page as a pixmap at 150 DPI for balance of detail and performance
-                        pix = page.get_pixmap(dpi=150)
-                        img_bytes = pix.tobytes("png")
-                        
-                        # Request visual OCR, table markdown conversion, and image descriptors
-                        response = self.client.models.generate_content(
-                            model=self.model_name,
-                            contents=[
-                                types.Part.from_bytes(
-                                    data=img_bytes,
-                                    mime_type='image/png'
-                                ),
-                                "Extract and describe all structural elements on this page. If there are tables, transcribe them in markdown format. If there are charts or diagrams, describe them in detail. If there are headers, signatures, or handwriting, mention them."
-                            ]
-                        )
-                        if response.text:
-                            visual_description = f"\n\n[Visual & Layout Analysis]:\n{response.text}"
-                    except Exception as ve:
-                        # Log error and continue with standard text extraction
-                        print(f"Failed to generate layout analysis for page {page_idx+1}: {ve}")
-                
-                pages.append({
-                    "text": raw_text + visual_description,
-                    "page_number": page_idx + 1
-                })
+            pages.extend(results)
             doc.close()
+
             
         elif ext == "docx":
             if docx is None:

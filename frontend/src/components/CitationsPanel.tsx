@@ -58,10 +58,11 @@ export const CitationsPanel: React.FC<CitationsPanelProps> = ({
               <span className="text-[10px] font-bold text-blue-700 dark:text-blue-400 uppercase tracking-wide">Grounded Attributions Ready</span>
             </div>
 
-            {retrievedSources.map((source) => (
+            {retrievedSources.map((source, index) => (
               <div 
                 key={source.chunk_id}
-                className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-850 flex flex-col gap-2 hover:border-blue-400 dark:hover:border-blue-800 transition-all shadow-sm"
+                id={`citation-${source.chunk_id}`}
+                className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-850 flex flex-col gap-2 hover:border-blue-400 dark:hover:border-blue-800 transition-all duration-500 shadow-sm ring-offset-2 dark:ring-offset-slate-900"
               >
                 <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-850 pb-1.5">
                   <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 max-w-[140px] truncate" title={source.filename}>

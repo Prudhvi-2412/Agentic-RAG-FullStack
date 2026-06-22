@@ -50,3 +50,42 @@ Classification:"""
             # Fallback to DOCUMENT_QUERY as a safe default under error conditions
             print(f"Routing classification failed, falling back to DOCUMENT_QUERY. Error: {e}")
             return "DOCUMENT_QUERY"
+
+    async def condense_query(self, query: str, history: list) -> str:
+        """
+        Condenses a user follow-up query and the recent conversation history into a standalone query.
+        """
+        if not history:
+            return query
+            
+        # Format the last 4 messages of history to keep context clean
+        recent_history = history[-4:]
+        history_str = ""
+        for msg in recent_history:
+            role_label = "User" if getattr(msg, "role", "user") == "user" else "Assistant"
+            text_val = getattr(msg, "text", "")
+            history_str += f"{role_label}: {text_val}\n"
+            
+        prompt = f"""Given the following conversation history and a follow-up question, rephrase the follow-up question to be a standalone question that can be understood without the conversation history. Do not change the core subject or intent of the follow-up question.
+        
+Conversation History:
+{history_str}
+
+Follow-up Question: {query}
+
+Standalone Question (Respond with ONLY the standalone question, no explanation, no formatting):"""
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(temperature=0.0)
+            )
+            condensed = response.text.strip()
+            if condensed:
+                return condensed
+            return query
+        except Exception as e:
+            print(f"Query condensation failed: {e}. Using raw query.")
+            return query
+

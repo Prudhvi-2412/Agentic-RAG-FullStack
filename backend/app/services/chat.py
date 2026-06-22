@@ -14,9 +14,10 @@ class ChatService:
         self.client = genai.Client(api_key=self.api_key)
         self.model_name = model_name.replace("models/", "")
 
-    async def stream_response(self, query: str, query_type: str, filters: Optional[list] = None) -> AsyncGenerator[str, None]:
+    async def stream_response(self, query: str, query_type: str, search_query: Optional[str] = None, filters: Optional[list] = None, user_id: Optional[str] = None) -> AsyncGenerator[str, None]:
         """
         Coordinates routing paths and streams response tokens formatted as Server-Sent Events (SSE).
+        Uses search_query (if provided) for vector retrieval, and query for generation context.
         Yields:
             event: metadata -> classification path
             event: sources  -> retrieved source attributions (if DOCUMENT_QUERY)
@@ -33,7 +34,8 @@ class ChatService:
             # 2. Retrieve sources if it is a document query
             if query_type == "DOCUMENT_QUERY":
                 try:
-                    sources = await self.vector_store_service.similarity_search(query, top_k=4, filters=filters)
+                    retrieval_query = search_query or query
+                    sources = await self.vector_store_service.similarity_search(retrieval_query, top_k=4, filters=filters, user_id=user_id)
                     yield f"event: sources\ndata: {json.dumps({'sources': sources})}\n\n"
                     await asyncio.sleep(0.01)
                 except Exception as ve:
@@ -41,6 +43,7 @@ class ChatService:
                     # Yield empty sources so client knows retrieval step is done
                     yield f"event: sources\ndata: {json.dumps({'sources': []})}\n\n"
                     await asyncio.sleep(0.01)
+
 
             # 3. Construct prompt based on type
             if query_type == "DOCUMENT_QUERY" and sources:
@@ -65,6 +68,8 @@ User Query: {query}
 
 Instructions:
 - Base your answers strictly on the context provided above.
+- Ground your statements and use inline numerical citations like [1], [2] to reference the context sources. The index corresponds to the 1-based order of the source documents provided in the Retrieved Context above.
+- Place citations at the end of relevant sentences.
 - If the context does not contain enough information to answer the question, state clearly that the answer is not present in the uploaded documents. Do not make up facts or hallucinate.
 - Use clean, premium markdown formatting (headers, bold, bullet points, tables where appropriate) for readability.
 - Maintain a helpful, analytical, and professional tone.
