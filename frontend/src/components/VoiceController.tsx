@@ -1,5 +1,5 @@
 import React from 'react';
-import { Volume2, VolumeX, Mic, Settings, Sliders, ChevronDown, Check } from 'lucide-react';
+import { VolumeX, Mic, Settings, Sliders, ChevronDown } from 'lucide-react';
 
 export const LANGUAGES = [
   { code: 'en', name: 'English (US)', flag: '🇺🇸' },
@@ -23,7 +23,6 @@ interface VoiceControllerProps {
   ttsRate: number;
   setTtsRate: (rate: number) => void;
   isPlaying: boolean;
-  isLoadingAudio: boolean;
   stopTTS: () => void;
   isListening: boolean;
   sttLanguage: string;
@@ -38,7 +37,6 @@ export const VoiceController: React.FC<VoiceControllerProps> = ({
   ttsRate,
   setTtsRate,
   isPlaying,
-  isLoadingAudio,
   stopTTS,
   isListening,
   sttLanguage,
@@ -47,7 +45,6 @@ export const VoiceController: React.FC<VoiceControllerProps> = ({
   const [isOpen, setIsOpen] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<'tts' | 'stt'>('tts');
 
-  const currentTtsLang = LANGUAGES.find(l => l.code === ttsLanguage) || LANGUAGES[0];
   const currentSttLang = LANGUAGES.find(l => l.code === sttLanguage) || LANGUAGES[0];
 
   return (

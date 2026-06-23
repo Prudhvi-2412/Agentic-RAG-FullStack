@@ -164,7 +164,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             ttsRate={ttsRate}
             setTtsRate={setTtsRate}
             isPlaying={isPlaying}
-            isLoadingAudio={isLoadingAudio}
             stopTTS={stopTTS}
             isListening={isListening}
             sttLanguage={sttLanguage}
@@ -275,7 +274,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           />
           <button
             type="button"
-            onClick={() => toggleSpeechToText((text) => setInputValue(prev => prev ? prev + ' ' + text : text))}
+            onClick={() => toggleSpeechToText((text: string) => setInputValue(inputValue ? `${inputValue} ${text}` : text))}
             disabled={isStreaming || isUploading}
             className={`absolute right-12 p-2 rounded-lg transition-all ${
               isListening
