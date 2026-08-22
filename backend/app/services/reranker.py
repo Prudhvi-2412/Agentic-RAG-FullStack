@@ -103,7 +103,10 @@ Do not include any explanation or markdown formatting outside the JSON."""
                     seen.add(idx)
 
             if not selected:
-                raise ValueError("Reranker selected no valid candidate ids")
+                # The model judged none of the candidates relevant. Keep the hybrid ordering
+                # rather than dropping every source, matching the no-reranker behaviour.
+                logger.info("Reranker returned no ids for query; keeping hybrid score order")
+                return candidates[:top_k]
 
             reranked = [candidates_to_rank[i] for i in selected]
 
