@@ -15,6 +15,10 @@ services:
         sync: false          # Set manually in Render dashboard → keep secret
       - key: PINECONE_API_KEY
         sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false          # Supabase dashboard → API → JWT Secret (required for auth)
+      - key: CORS_ALLOW_ORIGINS
+        sync: false          # Comma-separated frontend origins, e.g. https://documind-frontend.onrender.com
       - key: PINECONE_INDEX_NAME
         value: documind
       - key: GEMINI_MODEL_NAME
@@ -41,7 +45,7 @@ services:
         fromService:
           name: documind-backend
           type: web
-          property: host      # Automatically injects the deployed backend URL
+          property: host      # Injects the bare hostname; the client prefixes https:// at runtime
     routes:
       - type: rewrite
         source: /*

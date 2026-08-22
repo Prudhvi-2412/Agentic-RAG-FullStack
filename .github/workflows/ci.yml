@@ -34,7 +34,7 @@ jobs:
         run: |
           pip install flake8
           # Stop if there are syntax errors or undefined names; ignore line-length warnings
-          flake8 app/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 app/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
 
       - name: Verify FastAPI app imports correctly
         working-directory: backend
@@ -43,7 +43,22 @@ jobs:
           PINECONE_API_KEY: placeholder
           PINECONE_INDEX_NAME: documind
           GEMINI_MODEL_NAME: gemini-2.5-flash
+          SUPABASE_JWT_SECRET: placeholder-jwt-secret-for-ci-only
+          CORS_ALLOW_ORIGINS: http://localhost:5173
         run: python -c "from app.main import app; print('✅ Backend app imported successfully')"
+
+      - name: Run backend tests
+        working-directory: backend
+        env:
+          GEMINI_API_KEY: placeholder
+          PINECONE_API_KEY: placeholder
+          PINECONE_INDEX_NAME: documind
+          GEMINI_MODEL_NAME: gemini-2.5-flash
+          SUPABASE_JWT_SECRET: placeholder-jwt-secret-for-ci-only
+          CORS_ALLOW_ORIGINS: http://localhost:5173
+        run: |
+          pip install pytest
+          pytest tests/ -q
 
   # ─────────────────────────────────────────────
   # JOB 2: Frontend — Type-check & Build

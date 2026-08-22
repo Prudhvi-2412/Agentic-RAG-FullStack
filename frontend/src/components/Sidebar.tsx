@@ -94,7 +94,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     e.stopPropagation();
                     deleteSession(session.id);
                   }}
-                  className="absolute right-2.5 p-1 text-slate-450 dark:text-slate-500 hover:text-red-500 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center shadow-sm"
+                  className="absolute right-2.5 p-1 text-slate-400 dark:text-slate-500 hover:text-red-500 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center shadow-sm"
                   title="Delete conversation"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -153,7 +153,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       e.stopPropagation();
                       deleteDocument(doc.id, doc.name);
                     }}
-                    className="p-1 text-slate-300 dark:text-slate-655 hover:text-red-500 rounded hover:bg-white dark:hover:bg-slate-800 transition-all shadow-sm opacity-0 group-hover:opacity-100 flex-shrink-0"
+                    className="p-1 text-slate-300 dark:text-slate-600 hover:text-red-500 rounded hover:bg-white dark:hover:bg-slate-800 transition-all shadow-sm opacity-0 group-hover:opacity-100 flex-shrink-0"
                     title="Delete index mapping"
                   >
                     <Trash2 className="h-3.5 w-3.5" />

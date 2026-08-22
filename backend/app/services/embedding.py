@@ -1,20 +1,54 @@
-from google import genai
-from google.genai import types
+import logging
+from collections import OrderedDict
 from typing import List
 
+from google import genai
+from google.genai import types
+
+from app.core.retry import retry_with_backoff
+
+logger = logging.getLogger(__name__)
+
+# The Gemini embeddings endpoint rejects oversized batches, so document chunks are embedded
+# in fixed-size groups instead of a single request per upload.
+_EMBED_BATCH_SIZE = 64
+
+# Query embeddings are cached to avoid paying for a repeated HyDE round-trip on identical
+# questions. Bounded so a long-running server cannot grow the cache without limit.
+_QUERY_CACHE_MAX = 256
+
+
 class EmbeddingService:
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, model_name: str = "gemini-2.5-flash"):
         """
         Initializes the EmbeddingService using the new google-genai Client.
+
+        `model_name` is the generative model used for HyDE hypothetical-answer generation;
+        embeddings always use the dedicated embedding model.
         """
         self.api_key = api_key
         self.client = genai.Client(api_key=self.api_key)
         self.model_name = "gemini-embedding-001"
-        self.query_cache = {}  # Cache for query embeddings to reduce latency and API cost
+        self.generation_model_name = model_name.replace("models/", "")
+        self.dimension = 768
+        self.query_cache: "OrderedDict[str, List[float]]" = OrderedDict()
+
+    def _cache_get(self, key: str):
+        if key in self.query_cache:
+            self.query_cache.move_to_end(key)
+            return self.query_cache[key]
+        return None
+
+    def _cache_put(self, key: str, value: List[float]) -> None:
+        self.query_cache[key] = value
+        self.query_cache.move_to_end(key)
+        while len(self.query_cache) > _QUERY_CACHE_MAX:
+            self.query_cache.popitem(last=False)
 
     def generate_hyde_text(self, query: str) -> str:
         """
         Generates a hypothetical document answer using Gemini for HyDE retrieval.
+        Falls back to the raw query when generation fails, so retrieval still proceeds.
         """
         prompt = f"""Write a single paragraph that answers the following search query.
 Write it as if it were a direct excerpt from a reference document or book.
@@ -24,17 +58,32 @@ Query: {query}
 
 Hypothetical Answer:"""
         try:
-            from app.core.retry import retry_with_backoff
             response = retry_with_backoff(
                 self.client.models.generate_content,
-                model="gemini-2.5-flash",
+                model=self.generation_model_name,
                 contents=prompt
             )
-            if response.text:
-                return response.text.strip()
+            text = getattr(response, "text", None)
+            if text:
+                return text.strip()
         except Exception as e:
-            print(f"HyDE document generation failed: {e}")
+            logger.warning("HyDE document generation failed, using raw query: %s", e)
         return query
+
+    def _embed(self, contents, task_type: str) -> List[List[float]]:
+        response = retry_with_backoff(
+            self.client.models.embed_content,
+            model=self.model_name,
+            contents=contents,
+            config=types.EmbedContentConfig(
+                task_type=task_type,
+                output_dimensionality=self.dimension
+            )
+        )
+        embeddings = getattr(response, "embeddings", None)
+        if not embeddings:
+            raise RuntimeError("Gemini embeddings API returned no embeddings")
+        return [emb.values for emb in embeddings]
 
     def get_query_embedding(self, text: str, use_hyde: bool = False) -> List[float]:
         """
@@ -43,42 +92,25 @@ Hypothetical Answer:"""
         Optionally uses HyDE (Hypothetical Document Embedding) query expansion.
         """
         cache_key = f"hyde_{text}" if use_hyde else f"raw_{text}"
-        if cache_key in self.query_cache:
-            return self.query_cache[cache_key]
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            return cached
 
-        # Helper to get embedding from Gemini
-        def _embed(txt: str) -> List[float]:
-            from app.core.retry import retry_with_backoff
-            response = retry_with_backoff(
-                self.client.models.embed_content,
-                model=self.model_name,
-                contents=txt,
-                config=types.EmbedContentConfig(
-                    task_type="RETRIEVAL_QUERY",
-                    output_dimensionality=768
-                )
-            )
-            return response.embeddings[0].values
+        query_emb = self._embed(text, "RETRIEVAL_QUERY")[0]
 
-        try:
-            if use_hyde:
-                # 1. Embed raw query
-                query_emb = _embed(text)
-                # 2. Generate hypothetical answer and embed it
-                hyde_txt = self.generate_hyde_text(text)
-                hyde_emb = _embed(hyde_txt)
-                # 3. Fuse embeddings (0.5 query + 0.5 HyDE)
-                final_emb = [0.5 * q + 0.5 * h for q, h in zip(query_emb, hyde_emb)]
-                self.query_cache[cache_key] = final_emb
-                return final_emb
-            else:
-                final_emb = _embed(text)
-                self.query_cache[cache_key] = final_emb
-                return final_emb
-        except Exception as e:
-            print(f"Error generating query embedding: {e}")
-            # Fallback to direct raw embedding if HyDE processing fails
-            return _embed(text)
+        if use_hyde:
+            # generate_hyde_text already degrades to the raw query on failure; if embedding the
+            # hypothetical answer fails we still have a usable plain query embedding.
+            hyde_txt = self.generate_hyde_text(text)
+            if hyde_txt and hyde_txt != text:
+                try:
+                    hyde_emb = self._embed(hyde_txt, "RETRIEVAL_QUERY")[0]
+                    query_emb = [0.5 * q + 0.5 * h for q, h in zip(query_emb, hyde_emb)]
+                except Exception as e:
+                    logger.warning("HyDE embedding failed, using plain query embedding: %s", e)
+
+        self._cache_put(cache_key, query_emb)
+        return query_emb
 
     def get_document_embeddings(self, texts: List[str]) -> List[List[float]]:
         """
@@ -87,15 +119,14 @@ Hypothetical Answer:"""
         """
         if not texts:
             return []
-        from app.core.retry import retry_with_backoff
-        response = retry_with_backoff(
-            self.client.models.embed_content,
-            model=self.model_name,
-            contents=texts,
-            config=types.EmbedContentConfig(
-                task_type="RETRIEVAL_DOCUMENT",
-                output_dimensionality=768
-            )
-        )
-        return [emb.values for emb in response.embeddings]
 
+        embeddings: List[List[float]] = []
+        for i in range(0, len(texts), _EMBED_BATCH_SIZE):
+            batch = texts[i : i + _EMBED_BATCH_SIZE]
+            batch_embeddings = self._embed(batch, "RETRIEVAL_DOCUMENT")
+            if len(batch_embeddings) != len(batch):
+                raise RuntimeError(
+                    f"Gemini returned {len(batch_embeddings)} embeddings for {len(batch)} chunks"
+                )
+            embeddings.extend(batch_embeddings)
+        return embeddings

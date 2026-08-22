@@ -2,29 +2,26 @@ import { useState, useRef, useEffect } from 'react';
 import { Message, SourceCitation, ChatSession } from '../types';
 import { supabase } from '../supabaseClient';
 import { User } from '@supabase/supabase-js';
+import { BACKEND_URL } from '../config';
 
-const BACKEND_URL = (import.meta as any).env.VITE_BACKEND_URL || 
-  ((import.meta as any).env.DEV ? 'http://localhost:8000' : 'https://agentic-rag-fullstack-1.onrender.com');
+const WELCOME_TEXT =
+  'Hello! I am DocuMind AI. I have pre-indexed the book "Ikigai: The Japanese Secret to a Long and Happy Life". Ask me anything about finding your purpose, longevity, or flow!';
+
+function createWelcomeSession(id: string): ChatSession {
+  return {
+    id,
+    title: 'Ikigai Longevity & Purpose',
+    messages: [{ id: `welcome-${id}`, role: 'assistant', text: WELCOME_TEXT }],
+    sources: [],
+    queryType: null
+  };
+}
 
 export function useChat(user: User | null, activeFilters: string[]) {
-  const [chatSessions, setChatSessions] = useState<ChatSession[]>([
-    {
-      id: 'session-1',
-      title: 'Ikigai Longevity & Purpose',
-      messages: [
-        {
-          id: 'welcome-msg',
-          role: 'assistant',
-          text: 'Hello! I am DocuMind AI. I have pre-indexed the book "Ikigai: The Japanese Secret to a Long and Happy Life". Ask me anything about finding your purpose, longevity, or flow!'
-        }
-      ],
-      sources: [],
-      queryType: null
-    }
-  ]);
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>([createWelcomeSession('session-1')]);
   const [activeSessionId, setActiveSessionId] = useState<string>('session-1');
   const [inputValue, setInputValue] = useState('');
-  
+
   // Streaming states
   const [isStreaming, setIsStreaming] = useState(false);
   const [currentStreamText, setCurrentStreamText] = useState('');
@@ -32,23 +29,38 @@ export function useChat(user: User | null, activeFilters: string[]) {
   const [currentQueryType, setCurrentQueryType] = useState<string | null>(null);
 
   const chatBottomRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const activeSession = chatSessions.find(s => s.id === activeSessionId) || chatSessions[0];
-  const messages = activeSession.messages;
+  const messages = activeSession?.messages ?? [];
 
   // Auto-scroll chat to bottom
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, currentStreamText]);
 
+  // Abort any in-flight stream when the hook unmounts, so the reader is not left open and
+  // state updates are not attempted against an unmounted tree.
+  useEffect(() => {
+    return () => abortRef.current?.abort();
+  }, []);
+
   // Load chat sessions when user changes
   useEffect(() => {
+    let cancelled = false;
+
+    // A session belonging to the previous identity must not keep receiving tokens.
+    abortRef.current?.abort();
+    setIsStreaming(false);
+    setCurrentStreamText('');
+
     if (user) {
       const loadUserSessions = async () => {
         try {
           const { data: sessions, error } = await supabase
             .from('chat_sessions')
             .select('*')
+            .eq('user_id', user.id)
             .order('created_at', { ascending: false });
 
           if (error) throw error;
@@ -77,42 +89,20 @@ export function useChat(user: User | null, activeFilters: string[]) {
             })
           );
 
+          if (cancelled) return;
+
           if (sessionsWithMessages.length > 0) {
             setChatSessions(sessionsWithMessages);
             setActiveSessionId(sessionsWithMessages[0].id);
-          } else {
-            // Create a default session for the logged-in user if none exists
-            const defaultSessionId = `session-${Date.now()}`;
-            const defaultSession = {
-              id: defaultSessionId,
-              title: 'Ikigai Longevity & Purpose',
-              messages: [
-                {
-                  id: 'welcome-msg',
-                  role: 'assistant' as const,
-                  text: 'Hello! I am DocuMind AI. I have pre-indexed the book "Ikigai: The Japanese Secret to a Long and Happy Life". Ask me anything about finding your purpose, longevity, or flow!'
-                }
-              ],
-              sources: [],
-              queryType: null
-            };
-
-            await supabase.from('chat_sessions').insert({
-              id: defaultSessionId,
-              user_id: user.id,
-              title: defaultSession.title,
-              query_type: null
-            });
-
-            await supabase.from('messages').insert({
-              session_id: defaultSessionId,
-              role: 'assistant',
-              text: defaultSession.messages[0].text
-            });
-
-            setChatSessions([defaultSession]);
-            setActiveSessionId(defaultSessionId);
+            return;
           }
+
+          // Create a default session for the logged-in user if none exists
+          const defaultSession = createWelcomeSession(`session-${Date.now()}`);
+          await persistSession(user.id, defaultSession);
+          if (cancelled) return;
+          setChatSessions([defaultSession]);
+          setActiveSessionId(defaultSession.id);
         } catch (err) {
           console.error('Error loading chat sessions:', err);
         }
@@ -122,48 +112,39 @@ export function useChat(user: User | null, activeFilters: string[]) {
       // Load guest sessions from localStorage
       const savedSessions = localStorage.getItem('guestChatSessions');
       const savedActiveId = localStorage.getItem('guestActiveSessionId');
+      let restored: ChatSession[] | null = null;
+
       if (savedSessions) {
         try {
           const parsed = JSON.parse(savedSessions);
-          if (parsed && parsed.length > 0) {
-            setChatSessions(parsed);
-            if (savedActiveId && parsed.some((s: any) => s.id === savedActiveId)) {
-              setActiveSessionId(savedActiveId);
-            } else {
-              setActiveSessionId(parsed[0].id);
-            }
-          }
+          if (Array.isArray(parsed) && parsed.length > 0) restored = parsed;
         } catch (e) {
           console.error('Error loading guest sessions:', e);
         }
+      }
+
+      if (restored) {
+        setChatSessions(restored);
+        setActiveSessionId(
+          savedActiveId && restored.some(s => s.id === savedActiveId) ? savedActiveId : restored[0].id
+        );
       } else {
-        // Reset to default guest session
-        setChatSessions([
-          {
-            id: 'session-1',
-            title: 'Ikigai Longevity & Purpose',
-            messages: [
-              {
-                id: 'welcome-msg',
-                role: 'assistant',
-                text: 'Hello! I am DocuMind AI. I have pre-indexed the book "Ikigai: The Japanese Secret to a Long and Happy Life". Ask me anything about finding your purpose, longevity, or flow!'
-              }
-            ],
-            sources: [],
-            queryType: null
-          }
-        ]);
+        setChatSessions([createWelcomeSession('session-1')]);
         setActiveSessionId('session-1');
       }
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
-  // Persist guest sessions changes
+  // Persist guest sessions. Skipped while streaming so a long answer does not trigger a
+  // localStorage write on every token.
   useEffect(() => {
-    if (!user) {
-      localStorage.setItem('guestChatSessions', JSON.stringify(chatSessions));
-    }
-  }, [chatSessions, user]);
+    if (user || isStreaming) return;
+    localStorage.setItem('guestChatSessions', JSON.stringify(chatSessions));
+  }, [chatSessions, user, isStreaming]);
 
   useEffect(() => {
     if (!user) {
@@ -179,63 +160,51 @@ export function useChat(user: User | null, activeFilters: string[]) {
     }
   }, [activeSessionId, activeSession]);
 
+  const persistSession = async (userId: string, session: ChatSession) => {
+    const { error: sessionError } = await supabase.from('chat_sessions').insert({
+      id: session.id,
+      user_id: userId,
+      title: session.title,
+      query_type: null
+    });
+    if (sessionError) throw sessionError;
+
+    const { error: messageError } = await supabase.from('messages').insert({
+      session_id: session.id,
+      role: session.messages[0].role,
+      text: session.messages[0].text
+    });
+    if (messageError) throw messageError;
+  };
+
   const deleteSession = async (sessionId: string) => {
-    let nextActiveId = activeSessionId;
-    if (activeSessionId === sessionId) {
-      const remaining = chatSessions.filter(s => s.id !== sessionId);
-      if (remaining.length > 0) {
-        nextActiveId = remaining[0].id;
-      } else {
-        const defaultSessionId = `session-${Date.now()}`;
-        const defaultSession = {
-          id: defaultSessionId,
-          title: 'Ikigai Longevity & Purpose',
-          messages: [
-            {
-              id: 'welcome-msg',
-              role: 'assistant' as const,
-              text: 'Hello! I am DocuMind AI. I have pre-indexed the book "Ikigai: The Japanese Secret to a Long and Happy Life". Ask me anything about finding your purpose, longevity, or flow!'
-            }
-          ],
-          sources: [],
-          queryType: null
-        };
+    const remaining = chatSessions.filter(s => s.id !== sessionId);
 
-        if (user) {
-          try {
-            await supabase.from('chat_sessions').insert({
-              id: defaultSessionId,
-              user_id: user.id,
-              title: defaultSession.title,
-              query_type: null
-            });
-
-            await supabase.from('messages').insert({
-              session_id: defaultSessionId,
-              role: 'assistant',
-              text: defaultSession.messages[0].text
-            });
-          } catch (err) {
-            console.error('Error creating default session on deletion:', err);
-          }
-        }
-
-        setChatSessions([defaultSession]);
-        setActiveSessionId(defaultSessionId);
+    if (user) {
+      const { error } = await supabase.from('chat_sessions').delete().eq('id', sessionId);
+      if (error) {
+        console.error('Error deleting chat session:', error);
         return;
       }
     }
 
-    if (user) {
-      try {
-        await supabase.from('chat_sessions').delete().eq('id', sessionId);
-      } catch (err) {
-        console.error('Error deleting chat session from Supabase:', err);
-      }
+    if (remaining.length > 0) {
+      setChatSessions(remaining);
+      if (activeSessionId === sessionId) setActiveSessionId(remaining[0].id);
+      return;
     }
 
-    setChatSessions(prev => prev.filter(s => s.id !== sessionId));
-    setActiveSessionId(nextActiveId);
+    // Deleting the last session leaves the workspace with a fresh one.
+    const defaultSession = createWelcomeSession(`session-${Date.now()}`);
+    if (user) {
+      try {
+        await persistSession(user.id, defaultSession);
+      } catch (err) {
+        console.error('Error creating default session on deletion:', err);
+      }
+    }
+    setChatSessions([defaultSession]);
+    setActiveSessionId(defaultSession.id);
   };
 
   const createNewSession = async () => {
@@ -256,20 +225,10 @@ export function useChat(user: User | null, activeFilters: string[]) {
 
     if (user) {
       try {
-        await supabase.from('chat_sessions').insert({
-          id: newSessionId,
-          user_id: user.id,
-          title: newSession.title,
-          query_type: null
-        });
-
-        await supabase.from('messages').insert({
-          session_id: newSessionId,
-          role: 'assistant',
-          text: newSession.messages[0].text
-        });
+        await persistSession(user.id, newSession);
       } catch (err) {
         console.error('Error creating new session:', err);
+        return;
       }
     }
 
@@ -279,58 +238,60 @@ export function useChat(user: User | null, activeFilters: string[]) {
     setCurrentQueryType(null);
   };
 
+  const appendMessage = (sessionId: string, message: Message) => {
+    setChatSessions(prev => prev.map(s => (
+      s.id === sessionId
+        ? { ...s, messages: [...s.messages.filter(m => m.id !== message.id), message] }
+        : s
+    )));
+  };
+
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!inputValue.trim() || isStreaming) return;
 
-    const queryText = inputValue;
+    const queryText = inputValue.trim();
+    const sessionId = activeSessionId;
     setInputValue('');
     setIsStreaming(true);
     setCurrentStreamText('');
     setRetrievedSources([]);
     setCurrentQueryType(null);
 
-    const userMsg: Message = { id: `user-${Date.now()}`, role: 'user', text: queryText };
-    const updatedMessages = [...messages, userMsg];
-    
-    if (user) {
-      try {
-        await supabase.from('messages').insert({
-          session_id: activeSessionId,
-          role: 'user',
-          text: queryText
-        });
-      } catch (err) {
-        console.error('Error inserting user message:', err);
-      }
-    }
+    const historyPayload = messages.map(m => ({ role: m.role, text: m.text }));
 
-    setChatSessions(prev => prev.map(s => {
-      if (s.id === activeSessionId) {
-        return { ...s, messages: updatedMessages };
-      }
-      return s;
-    }));
+    const userMsg: Message = { id: `user-${Date.now()}`, role: 'user', text: queryText };
+    appendMessage(sessionId, userMsg);
+
+    if (user) {
+      const { error } = await supabase.from('messages').insert({
+        session_id: sessionId,
+        role: 'user',
+        text: queryText
+      });
+      if (error) console.error('Error inserting user message:', error);
+    }
 
     const assistantMsgId = `assistant-${Date.now()}`;
     let accumulatedText = '';
+    let completed = false;
+
+    const controller = new AbortController();
+    abortRef.current?.abort();
+    abortRef.current = controller;
 
     try {
       const session = (await supabase.auth.getSession()).data.session;
-      const headers: any = { 'Content-Type': 'application/json' };
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (session) {
         headers['Authorization'] = `Bearer ${session.access_token}`;
       }
 
-      const historyPayload = messages.map(m => ({
-        role: m.role,
-        text: m.text
-      }));
-
       const response = await fetch(`${BACKEND_URL}/api/query`, {
         method: 'POST',
-        headers: headers,
-        body: JSON.stringify({ 
+        headers,
+        signal: controller.signal,
+        body: JSON.stringify({
           query: queryText,
           filters: activeFilters.length > 0 ? activeFilters : null,
           history: historyPayload
@@ -338,7 +299,7 @@ export function useChat(user: User | null, activeFilters: string[]) {
       });
 
       if (!response.ok) {
-        throw new Error(`Connection error: ${response.statusText}`);
+        throw new Error(`Request failed with status ${response.status}`);
       }
 
       const reader = response.body?.getReader();
@@ -360,11 +321,10 @@ export function useChat(user: User | null, activeFilters: string[]) {
         for (const packet of packets) {
           if (!packet.trim()) continue;
 
-          const lines = packet.split('\n');
           let eventName = '';
           let dataVal = '';
 
-          for (const line of lines) {
+          for (const line of packet.split('\n')) {
             if (line.startsWith('event:')) {
               eventName = line.substring(6).trim();
             } else if (line.startsWith('data:')) {
@@ -372,75 +332,68 @@ export function useChat(user: User | null, activeFilters: string[]) {
             }
           }
 
-          if (dataVal) {
-            try {
-              const payload = JSON.parse(dataVal);
-              
-              if (eventName === 'metadata') {
-                setCurrentQueryType(payload.query_type);
-                setChatSessions(prev => prev.map(s => {
-                  if (s.id === activeSessionId) {
-                    return { ...s, queryType: payload.query_type };
-                  }
-                  return s;
-                }));
-              } else if (eventName === 'sources') {
-                setRetrievedSources(payload.sources || []);
-                setChatSessions(prev => prev.map(s => {
-                  if (s.id === activeSessionId) {
-                    return { ...s, sources: payload.sources || [] };
-                  }
-                  return s;
-                }));
-              } else if (eventName === 'token') {
-                accumulatedText += payload.text;
-                setCurrentStreamText(accumulatedText);
-                
-                setChatSessions(prev => prev.map(s => {
-                  if (s.id === activeSessionId) {
-                    const filtered = s.messages.filter(m => m.id !== assistantMsgId);
-                    return {
-                      ...s,
-                      messages: [...filtered, { id: assistantMsgId, role: 'assistant', text: accumulatedText }]
-                    };
-                  }
-                  return s;
-                }));
-              } else if (eventName === 'complete') {
-                setIsStreaming(false);
-                if (user) {
-                  try {
-                    await supabase.from('messages').insert({
-                      session_id: activeSessionId,
-                      role: 'assistant',
-                      text: accumulatedText
-                    });
-                  } catch (err) {
-                    console.error('Error inserting assistant message:', err);
-                  }
-                }
-              }
-            } catch (err) {
-              console.error('Error parsing SSE packet:', err);
-            }
+          if (!dataVal) continue;
+
+          let payload: any;
+          try {
+            payload = JSON.parse(dataVal);
+          } catch (err) {
+            console.error('Error parsing SSE packet:', err);
+            continue;
+          }
+
+          if (eventName === 'metadata') {
+            setCurrentQueryType(payload.query_type);
+            setChatSessions(prev => prev.map(s => (
+              s.id === sessionId ? { ...s, queryType: payload.query_type } : s
+            )));
+          } else if (eventName === 'sources') {
+            const sources = payload.sources || [];
+            setRetrievedSources(sources);
+            setChatSessions(prev => prev.map(s => (
+              s.id === sessionId ? { ...s, sources } : s
+            )));
+          } else if (eventName === 'token') {
+            accumulatedText += payload.text;
+            setCurrentStreamText(accumulatedText);
+            appendMessage(sessionId, { id: assistantMsgId, role: 'assistant', text: accumulatedText });
+          } else if (eventName === 'complete') {
+            completed = true;
           }
         }
       }
 
+      if (!completed) {
+        // The connection closed before the backend signalled completion, so the answer on
+        // screen is partial. Say so instead of persisting it as a finished reply.
+        throw new Error('The response stream ended unexpectedly.');
+      }
+
+      if (user && accumulatedText) {
+        const { error } = await supabase.from('messages').insert({
+          session_id: sessionId,
+          role: 'assistant',
+          text: accumulatedText
+        });
+        if (error) console.error('Error inserting assistant message:', error);
+      }
     } catch (err: any) {
+      if (err?.name === 'AbortError') return;
+
       console.error(err);
-      setIsStreaming(false);
-      const errorMsg: Message = {
+      const detail = accumulatedText
+        ? '\n\n*The response was interrupted before it finished.*'
+        : `**Connection Error**: Could not reach the assistant at \`${BACKEND_URL}\`.\n\n*Details: ${err.message}*`;
+
+      appendMessage(sessionId, {
         id: assistantMsgId,
         role: 'assistant',
-        text: `**Connection Error**: Failed to stream response from backend. Ensure your FastAPI server is running on \`${BACKEND_URL}\`.\n\n*Details: ${err.message}*`
-      };
-      setChatSessions(prev => prev.map(s => {
-        if (s.id === activeSessionId) {
-          return { ...s, messages: [...s.messages, errorMsg] };
-        }
-        return s;
-      }));
+        text: `${accumulatedText}${detail}`
+      });
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null;
+      setIsStreaming(false);
+      setCurrentStreamText('');
     }
   };
 

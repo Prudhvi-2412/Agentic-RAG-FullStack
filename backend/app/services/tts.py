@@ -1,8 +1,16 @@
-import os
 import hashlib
-import asyncio
-import edge_tts
+import logging
+import os
+import tempfile
 from typing import AsyncGenerator
+
+import edge_tts
+
+logger = logging.getLogger(__name__)
+
+# edge-tts accepts rates roughly within +/-100%; the UI slider spans 0.8x - 1.5x.
+_MIN_RATE = 0.5
+_MAX_RATE = 2.0
 
 # Voice maps for European and Indian regional languages using Microsoft Azure Neural Voices
 VOICE_MAP = {
@@ -69,9 +77,11 @@ class TTSService:
         Returns the neural voice name for the given language and gender.
         Defaults to English (US) if language is unsupported.
         """
-        lang = language.lower()
-        gen = gender.lower() if gender in ["male", "female"] else "female"
-        
+        lang = (language or "").lower()
+        gen = (gender or "").lower()
+        if gen not in ("male", "female"):
+            gen = "female"
+
         if lang in VOICE_MAP:
             return VOICE_MAP[lang][gen]
         
@@ -84,16 +94,17 @@ class TTSService:
         edge-tts, writes to cache, and yields chunks to the caller.
         """
         voice = self.get_voice(language, gender)
-        
+
         # Convert numeric rate (e.g. 1.0) to edge-tts rate format (e.g. "+0%", "+10%", "-5%")
-        percentage = int((rate_val - 1.0) * 100)
+        rate_val = min(_MAX_RATE, max(_MIN_RATE, float(rate_val)))
+        percentage = int(round((rate_val - 1.0) * 100))
         rate_str = f"{'+' if percentage >= 0 else ''}{percentage}%"
 
         cache_path = self._get_cache_path(text, voice, rate_str)
 
         # 1. Cache Hit - stream directly from stored file to conserve API calls
         if os.path.exists(cache_path):
-            print(f"TTS Cache HIT: {cache_path}")
+            logger.info("TTS cache hit for voice %s at %s", voice, rate_str)
             chunk_size = 4096
             with open(cache_path, "rb") as f:
                 while True:
@@ -103,31 +114,37 @@ class TTSService:
                     yield data
             return
 
-        # 2. Cache Miss - stream from edge-tts and save output asynchronously
-        print(f"TTS Cache MISS. Synthesizing voice: {voice}, rate: {rate_str}")
+        # 2. Cache Miss - synthesize, streaming to the client while writing a temp file.
+        # The cache entry is only published (atomic rename) once synthesis completes, so an
+        # aborted request can never leave a truncated MP3 behind under a valid cache key.
+        logger.info("TTS cache miss; synthesizing voice %s at %s", voice, rate_str)
+        communicate = edge_tts.Communicate(text, voice, rate=rate_str)
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=self.cache_dir, suffix=".part")
+        completed = False
         try:
-            communicate = edge_tts.Communicate(text, voice, rate=rate_str)
-            
-            # We want to save to the cache file while streaming
-            # Open the cache file for writing bytes
-            cache_file = open(cache_path, "wb")
-            
-            try:
+            with os.fdopen(tmp_fd, "wb") as tmp_file:
                 async for chunk in communicate.stream():
                     if chunk["type"] == "audio":
                         data_bytes = chunk["data"]
-                        cache_file.write(data_bytes)
+                        tmp_file.write(data_bytes)
                         yield data_bytes
-            finally:
-                cache_file.close()
-                
+            completed = True
         except Exception as e:
-            # Clean up partial files if synthesis fails
-            if os.path.exists(cache_path):
+            logger.error("edge-tts synthesis failed for voice %s: %s", voice, e)
+            raise
+        finally:
+            if completed:
                 try:
-                    os.remove(cache_path)
-                except:
-                    pass
-            print(f"Error during edge-tts stream: {str(e)}")
-            # Raise exception so routes can return an appropriate HTTP status
-            raise e
+                    os.replace(tmp_path, cache_path)
+                except OSError as e:
+                    logger.warning("Could not publish TTS cache entry: %s", e)
+                    self._safe_unlink(tmp_path)
+            else:
+                self._safe_unlink(tmp_path)
+
+    @staticmethod
+    def _safe_unlink(path: str) -> None:
+        try:
+            os.remove(path)
+        except OSError:
+            pass

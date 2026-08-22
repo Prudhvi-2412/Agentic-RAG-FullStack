@@ -1,7 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-
-const BACKEND_URL = (import.meta as any).env.VITE_BACKEND_URL || 
-  ((import.meta as any).env.DEV ? 'http://localhost:8000' : 'https://agentic-rag-fullstack-1.onrender.com');
+import { BACKEND_URL } from '../config';
 
 // STT Locale mappings
 const STT_LOCALE_MAP: Record<string, string> = {
@@ -33,14 +31,28 @@ export function useAudio() {
   const [sttError, setSttError] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
   const recognitionRef = useRef<any>(null);
+  const requestRef = useRef<AbortController | null>(null);
 
-  // Clean up audio on unmount
+  /** Stops playback and releases the blob URL; without this every narration leaks memory. */
+  const releaseAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = '';
+      audioRef.current = null;
+    }
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
+  };
+
+  // Clean up audio, in-flight requests and recognition on unmount
   useEffect(() => {
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-      }
+      releaseAudio();
+      requestRef.current?.abort();
       if (recognitionRef.current) {
         recognitionRef.current.abort();
       }
@@ -49,14 +61,15 @@ export function useAudio() {
 
   // Play Speech synthesis
   const playTTS = async (text: string, customLang?: string) => {
-    // Stop any currently playing audio
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
+    const wasPlayingThisText = isPlaying && activeSpeechText === text;
 
-    if (isPlaying && activeSpeechText === text) {
+    // Stop any currently playing audio and cancel a pending synthesis request
+    requestRef.current?.abort();
+    releaseAudio();
+
+    if (wasPlayingThisText) {
       setIsPlaying(false);
+      setIsLoadingAudio(false);
       setActiveSpeechText(null);
       return;
     }
@@ -64,13 +77,16 @@ export function useAudio() {
     setIsLoadingAudio(true);
     setActiveSpeechText(text);
 
+    const controller = new AbortController();
+    requestRef.current = controller;
+
     try {
       const selectedLang = customLang || ttsLanguage;
-      console.log("Sending TTS Request:", { text, language: selectedLang, gender: ttsGender, rate: ttsRate });
-      
+
       const response = await fetch(`${BACKEND_URL}/api/tts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           text,
           language: selectedLang,
@@ -84,45 +100,55 @@ export function useAudio() {
       }
 
       const audioBlob = await response.blob();
+      if (controller.signal.aborted) return;
+      if (audioBlob.size === 0) {
+        throw new Error('Speech synthesis returned no audio.');
+      }
+
       const audioUrl = URL.createObjectURL(audioBlob);
       const audio = new Audio(audioUrl);
+      audioRef.current = audio;
+      audioUrlRef.current = audioUrl;
 
       audio.oncanplaythrough = () => {
         setIsLoadingAudio(false);
         setIsPlaying(true);
         audio.play().catch(err => {
-          console.error("Playback failed:", err);
+          console.error('Playback failed:', err);
           setIsPlaying(false);
+          setActiveSpeechText(null);
         });
       };
 
       audio.onended = () => {
         setIsPlaying(false);
         setActiveSpeechText(null);
+        releaseAudio();
       };
 
       audio.onerror = (e) => {
-        console.error("Audio playback error:", e);
+        console.error('Audio playback error:', e);
         setIsLoadingAudio(false);
         setIsPlaying(false);
         setActiveSpeechText(null);
+        releaseAudio();
       };
-
-      audioRef.current = audio;
     } catch (err: any) {
+      if (err?.name === 'AbortError') return;
       console.error(err);
       setIsLoadingAudio(false);
       setIsPlaying(false);
       setActiveSpeechText(null);
       alert(err.message || 'TTS request failed');
+    } finally {
+      if (requestRef.current === controller) requestRef.current = null;
     }
   };
 
   const stopTTS = () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
+    requestRef.current?.abort();
+    releaseAudio();
+    setIsLoadingAudio(false);
     setIsPlaying(false);
     setActiveSpeechText(null);
   };
@@ -171,7 +197,16 @@ export function useAudio() {
     };
 
     recognitionRef.current = recognition;
-    recognition.start();
+    try {
+      recognition.start();
+    } catch (err: any) {
+      // start() throws if a previous session is still shutting down; don't strand the
+      // microphone button in its "listening" state.
+      console.error('Could not start speech recognition:', err);
+      setSttError(err?.message || 'Could not start speech recognition.');
+      setIsListening(false);
+      recognitionRef.current = null;
+    }
   };
 
   return {

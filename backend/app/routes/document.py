@@ -1,119 +1,141 @@
-from fastapi import APIRouter, File, UploadFile, HTTPException, Request, Header
-from app.models.document import DocumentUploadResponse
-from app.core.auth import get_user_id_from_header
-from typing import Optional
+import asyncio
+import logging
+import os
+import re
 import uuid
+
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+
+from app.core.auth import require_user_id
+from app.core.config import settings
+from app.models.document import DocumentUploadResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api")
 
+SUPPORTED_EXTENSIONS = ("pdf", "docx", "txt", "md", "markdown")
+_MAX_FILENAME_LENGTH = 200
+_UNSAFE_FILENAME_CHARS = re.compile(r'[\x00-\x1f\x7f<>:"/\\|?*]')
+
+
+def sanitize_filename(raw_name: str) -> str:
+    """
+    Reduces a client-supplied filename to a safe display/metadata value.
+
+    The name is never used to build a filesystem path, but it is stored in vector metadata,
+    echoed back to every client, and used as a search filter — so path separators, traversal
+    sequences and control characters are stripped here rather than trusted.
+    """
+    name = os.path.basename(raw_name.replace("\\", "/")).strip()
+    name = _UNSAFE_FILENAME_CHARS.sub("_", name)
+    name = name.lstrip(".") or "document"
+    return name[:_MAX_FILENAME_LENGTH]
+
+
 @router.post("/upload", response_model=DocumentUploadResponse)
-async def upload_document(request: Request, file: UploadFile = File(...), authorization: Optional[str] = Header(None)):
+async def upload_document(
+    request: Request,
+    file: UploadFile = File(...),
+    user_id: str = Depends(require_user_id),
+):
     """
     Ingests an uploaded file (PDF, DOCX, TXT, MD), parses text page-by-page,
-    generates embeddings, and indexes them into Pinecone.
+    generates embeddings, and indexes them into Pinecone under the caller's user id.
+
+    Authentication is required: an indexed document must have an owner, otherwise it could
+    not be scoped on retrieval or deletion.
     """
-    filename = file.filename
-    ext = filename.split(".")[-1].lower()
-    
-    # Validation check
-    if ext not in ["pdf", "docx", "txt", "md", "markdown"]:
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="A filename is required.")
+
+    filename = sanitize_filename(file.filename)
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+    if ext not in SUPPORTED_EXTENSIONS:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail=f"Unsupported file format: .{ext}. Supported formats are PDF, DOCX, TXT, and Markdown."
         )
 
+    max_bytes = settings.max_upload_mb * 1024 * 1024
     try:
-        content_bytes = await file.read()
+        content_bytes = await file.read(max_bytes + 1)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to read file payload: {str(e)}")
+        logger.warning("Failed to read upload payload: %s", e)
+        raise HTTPException(status_code=400, detail="Failed to read the uploaded file.")
+
+    if len(content_bytes) > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File is larger than the {settings.max_upload_mb} MB upload limit."
+        )
+    if not content_bytes:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
 
     document_id = str(uuid.uuid4())
-    
-    # Decode user ID if Authorization header is present
-    user_id = get_user_id_from_header(authorization)
-    
+
     # Retrieve singletons from app state
     processor = request.app.state.document_processor
     vectorstore = request.app.state.vector_store_service
 
     try:
-        # Process and split file
-        chunks = await processor.process_file(content_bytes, filename, document_id)
-        if not chunks:
-            raise HTTPException(
-                status_code=400, 
-                detail="No readable text contents could be parsed from this document. Please verify the file is not empty or scanned image only."
-            )
-
-        # Vector database upserting (pass user_id for multi-tenancy)
-        await vectorstore.upsert_chunks(chunks, user_id=user_id)
-
-        return DocumentUploadResponse(
-            document_id=document_id,
-            filename=filename,
-            chunks_created=len(chunks),
-            status="indexed"
-        )
-        
+        # Parsing rasterises pages and calls Gemini synchronously — keep it off the event loop.
+        chunks = await asyncio.to_thread(processor.process_file, content_bytes, filename, document_id)
     except ImportError as ie:
-        raise HTTPException(status_code=500, detail=f"Missing dependencies on server: {str(ie)}")
+        logger.error("Missing parser dependency: %s", ie)
+        raise HTTPException(status_code=500, detail="This file type cannot be processed on the server.")
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Pipeline ingestion failed: {str(e)}")
+        logger.exception("Document parsing failed for %s: %s", filename, e)
+        raise HTTPException(status_code=500, detail="Failed to parse the uploaded document.")
+
+    if not chunks:
+        raise HTTPException(
+            status_code=400,
+            detail="No readable text contents could be parsed from this document. Please verify the file is not empty or scanned image only."
+        )
+
+    try:
+        await vectorstore.upsert_chunks(chunks, user_id=user_id)
+    except Exception as e:
+        logger.exception("Indexing failed for %s: %s", filename, e)
+        # A partially upserted document would answer queries with half its content, so roll
+        # back whatever made it into the index before reporting the failure.
+        try:
+            await vectorstore.delete_document(document_id, user_id=user_id)
+        except Exception as cleanup_error:
+            logger.error("Could not roll back partial index for %s: %s", document_id, cleanup_error)
+        raise HTTPException(status_code=502, detail="Failed to index the document. Please try again.")
+
+    return DocumentUploadResponse(
+        document_id=document_id,
+        filename=filename,
+        chunks_created=len(chunks),
+        status="indexed"
+    )
+
 
 @router.delete("/documents/{document_id}")
-async def delete_document_endpoint(request: Request, document_id: str, authorization: Optional[str] = Header(None)):
+async def delete_document_endpoint(
+    request: Request,
+    document_id: str,
+    user_id: str = Depends(require_user_id),
+):
     """
     Deletes all indexed vectors associated with a document_id from Pinecone.
+    Ownership is verified server-side before anything is removed.
     """
     vectorstore = request.app.state.vector_store_service
-    user_id = get_user_id_from_header(authorization)
     try:
-        # Pass user_id to ensure a user can only delete their own documents
         await vectorstore.delete_document(document_id, user_id=user_id)
-        return {"status": "success", "message": f"Document {document_id} deleted from Pinecone"}
+    except PermissionError as pe:
+        raise HTTPException(status_code=403, detail=str(pe))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Document not found in the vector index.")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete document: {str(e)}")
+        logger.exception("Deletion failed for %s: %s", document_id, e)
+        raise HTTPException(status_code=502, detail="Failed to delete the document from the vector index.")
 
-
-import os
-
-@router.get("/setup-ikigai")
-async def setup_ikigai(request: Request):
-    """
-    Deletes all vectors of meditations.pdf and ingests Ikigai.pdf into Pinecone.
-    """
-    vectorstore = request.app.state.vector_store_service
-    processor = request.app.state.document_processor
-    
-    # 1. Delete all vectors associated with old meditations books
-    try:
-        vectorstore.index.delete(filter={"filename": {"$in": ["meditations.pdf", "meidations.pdf", "Meditations.pdf"]}})
-    except Exception as de:
-        print(f"No existing meditations vectors to delete or delete failed: {de}")
-        
-    # 2. Locate and read Ikigai PDF
-    pdf_filename = "Ikigai _ the Japanese secret to a long and happy life ( PDFDrive.com ).pdf"
-    pdf_path = os.path.join("d:\\RAG-on-PDF-main\\Ai agent\\Agentic-RAG-FullStack", pdf_filename)
-    
-    if not os.path.exists(pdf_path):
-        pdf_path = os.path.join(os.getcwd(), pdf_filename)
-        if not os.path.exists(pdf_path):
-            raise HTTPException(status_code=404, detail="Ikigai PDF not found in workspace path.")
-            
-    try:
-        with open(pdf_path, "rb") as f:
-            content_bytes = f.read()
-            
-        document_id = "ikigai-default-doc-id"
-        chunks = await processor.process_file(content_bytes, "Ikigai.pdf", document_id)
-        if not chunks:
-            raise HTTPException(status_code=400, detail="Failed to parse text from Ikigai PDF.")
-            
-        await vectorstore.upsert_chunks(chunks)
-        return {
-            "status": "success",
-            "message": "Deleted meditations.pdf and successfully ingested Ikigai.pdf",
-            "chunks_created": len(chunks)
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to ingest Ikigai PDF: {str(e)}")
+    return {"status": "success", "message": f"Document {document_id} deleted from Pinecone"}

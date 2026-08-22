@@ -105,7 +105,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
                 <Sparkles className="h-5 w-5" />
               </div>
               <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-2">Intelligent Router</h4>
-              <p className="text-xs text-slate-400 dark:text-slate-505 leading-relaxed">
+              <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
                 Zero-shot Gemini classification routes generic chats away from vector search, saving Pinecone query loads.
               </p>
             </div>
@@ -114,7 +114,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
                 <Database className="h-5 w-5" />
               </div>
               <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-2">Pinecone Serverless</h4>
-              <p className="text-xs text-slate-400 dark:text-slate-505 leading-relaxed">
+              <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
                 Indexes high-density 768-dimensional text embeddings in namespaces, allowing rapid cosine search matchings.
               </p>
             </div>
@@ -123,7 +123,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
                 <Search className="h-5 w-5" />
               </div>
               <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-2">Source Citations</h4>
-              <p className="text-xs text-slate-400 dark:text-slate-505 leading-relaxed">
+              <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
                 Every statement retrieved has exact filename tracking and page-level mappings rendered in detail.
               </p>
             </div>
@@ -132,7 +132,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
                 <BookOpen className="h-5 w-5" />
               </div>
               <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-2">Multimodal OCR Ingestion</h4>
-              <p className="text-xs text-slate-400 dark:text-slate-550 leading-relaxed">
+              <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
                 Converts PDF pages into images to transcribe complex tables into markdown and capture visual chart context using Gemini Vision.
               </p>
             </div>
@@ -149,8 +149,8 @@ export const LandingView: React.FC<LandingViewProps> = ({
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="p-6 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 rounded-2xl border border-slate-250 dark:border-slate-800 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all group">
-              <h4 className="font-bold text-slate-800 dark:text-slate-250 mb-2 text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+            <div className="p-6 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all group">
+              <h4 className="font-bold text-slate-800 dark:text-slate-300 mb-2 text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                 Parallel Visual Ingestion
               </h4>
               <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
@@ -158,8 +158,8 @@ export const LandingView: React.FC<LandingViewProps> = ({
               </p>
             </div>
 
-            <div className="p-6 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 rounded-2xl border border-slate-250 dark:border-slate-800 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all group">
-              <h4 className="font-bold text-slate-800 dark:text-slate-250 mb-2 text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+            <div className="p-6 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all group">
+              <h4 className="font-bold text-slate-800 dark:text-slate-300 mb-2 text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                 Hybrid Dense-Sparse RAG
               </h4>
               <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
@@ -167,8 +167,8 @@ export const LandingView: React.FC<LandingViewProps> = ({
               </p>
             </div>
 
-            <div className="p-6 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 rounded-2xl border border-slate-250 dark:border-slate-800 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all group">
-              <h4 className="font-bold text-slate-800 dark:text-slate-250 mb-2 text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+            <div className="p-6 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all group">
+              <h4 className="font-bold text-slate-800 dark:text-slate-300 mb-2 text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                 Interactive Citation Mapping
               </h4>
               <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
@@ -176,8 +176,8 @@ export const LandingView: React.FC<LandingViewProps> = ({
               </p>
             </div>
 
-            <div className="p-6 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 rounded-2xl border border-slate-250 dark:border-slate-800 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all group md:col-span-1">
-              <h4 className="font-bold text-slate-800 dark:text-slate-250 mb-2 text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+            <div className="p-6 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all group md:col-span-1">
+              <h4 className="font-bold text-slate-800 dark:text-slate-300 mb-2 text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                 History-Aware Condensation
               </h4>
               <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
@@ -185,8 +185,8 @@ export const LandingView: React.FC<LandingViewProps> = ({
               </p>
             </div>
 
-            <div className="p-6 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 rounded-2xl border border-slate-250 dark:border-slate-800 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all group md:col-span-2">
-              <h4 className="font-bold text-slate-800 dark:text-slate-250 mb-2 text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+            <div className="p-6 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-950/50 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all group md:col-span-2">
+              <h4 className="font-bold text-slate-800 dark:text-slate-300 mb-2 text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                 JWT-Isolated Multi-Tenancy
               </h4>
               <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">

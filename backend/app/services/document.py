@@ -1,8 +1,15 @@
+import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from app.services.parsers import PDFParser, DocxParser, TextParser
+
+logger = logging.getLogger(__name__)
+
+# Unicode control characters that corrupt prompts/metadata. Printable non-ASCII text
+# (accents, CJK, Indic scripts) must be preserved.
+_CONTROL_CHARS = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]')
 
 class DocumentProcessor:
     def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-2.5-flash"):
@@ -13,13 +20,13 @@ class DocumentProcessor:
         self.api_key = api_key
         self.model_name = model_name.replace("models/", "")
         self.client = None
-        
+
         if self.api_key:
             try:
                 from google import genai
                 self.client = genai.Client(api_key=self.api_key)
             except Exception as e:
-                print(f"Failed to initialize Gemini Client in DocumentProcessor: {e}")
+                logger.error("Failed to initialize Gemini Client in DocumentProcessor: %s", e)
 
         # High-quality semantic RAG splitting parameters
         self.text_splitter = RecursiveCharacterTextSplitter(
@@ -47,10 +54,10 @@ class DocumentProcessor:
         
         # Replace multiple whitespace characters/newlines with a single space
         text = re.sub(r'\s+', ' ', text)
-        
+
         # Remove non-printable control characters
-        text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\xff]', '', text)
-        
+        text = _CONTROL_CHARS.sub('', text)
+
         return text.strip()
 
     def extract_text(self, file_bytes: bytes, filename: str) -> List[Dict[str, Any]]:
@@ -64,15 +71,16 @@ class DocumentProcessor:
         parser = self.parsers[ext]
         return parser.parse(file_bytes, filename, client=self.client, model_name=self.model_name)
 
-    async def process_file(self, file_bytes: bytes, filename: str, document_id: str) -> List[Dict[str, Any]]:
+    def process_file(self, file_bytes: bytes, filename: str, document_id: str) -> List[Dict[str, Any]]:
         """
-        Asynchronously processes an uploaded file.
-        Extracts, cleans, chunks, and attaches metadata.
-        Returns list of chunks.
+        Processes an uploaded file: extracts, cleans, chunks, and attaches metadata.
+
+        This is CPU-bound (PDF rasterisation) and makes blocking network calls, so callers
+        must run it off the event loop (see `asyncio.to_thread` in the upload route).
         """
         raw_pages = self.extract_text(file_bytes, filename)
         ext = filename.split(".")[-1].lower()
-        upload_time = datetime.utcnow().isoformat()
+        upload_time = datetime.now(timezone.utc).isoformat()
         
         chunks: List[Dict[str, Any]] = []
         

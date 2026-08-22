@@ -47,6 +47,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
   const messages = activeSession.messages;
 
+  // `activeSession.sources` only ever holds the citations for the most recent retrieval, so
+  // only that reply may render clickable citation chips. Earlier replies would otherwise link
+  // [1] to a chunk from a different question.
+  const lastAssistantMessageId = [...messages].reverse().find(m => m.role === 'assistant')?.id;
+
   const handleCitationClick = (chunkId: string) => {
     const element = document.getElementById(`citation-${chunkId}`);
     if (element) {
@@ -186,7 +191,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
               {msg.role === 'assistant' ? (
                 /* Text layout supporting basic formatting styles */
                 <div className="prose prose-sm max-w-none dark:prose-invert text-slate-800 dark:text-slate-200">
-                  {renderMessageTextWithCitations(msg.text, activeSession.sources)}
+                  {renderMessageTextWithCitations(
+                    msg.text,
+                    msg.id === lastAssistantMessageId ? activeSession.sources : []
+                  )}
                   
                   <div className="mt-3.5 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
                     <div className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
@@ -225,20 +233,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           </div>
         ))}
 
-        {/* Live stream text chunk overlay rendering */}
-        {isStreaming && currentStreamText && !messages.find(m => m.text === currentStreamText) && (
-          <div className="flex justify-start">
-            <div className="max-w-xl rounded-2xl px-5 py-3.5 shadow-sm text-sm border bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800 rounded-tl-none leading-relaxed">
-              <div className="prose prose-sm max-w-none dark:prose-invert text-slate-800 dark:text-slate-200">
-                {renderMessageTextWithCitations(currentStreamText, activeSession.sources)}
-              </div>
-              <span className="inline-block h-3 w-1.5 bg-blue-500 animate-pulse ml-0.5 align-middle"></span>
-            </div>
-          </div>
-        )}
-
-
-        {/* Thinking/Loading skeleton loader */}
+        {/* Thinking/Loading skeleton loader. Streamed tokens are appended straight into the
+            active session's message list, so no separate live overlay is rendered here — a
+            second copy would duplicate the reply whenever the user switches sessions mid-stream. */}
         {isStreaming && !currentStreamText && (
           <div className="flex justify-start">
             <div className="max-w-xs rounded-2xl px-5 py-4 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-tl-none shadow-sm flex flex-col gap-2">

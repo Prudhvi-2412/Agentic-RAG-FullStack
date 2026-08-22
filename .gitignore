@@ -41,3 +41,6 @@ desktop.ini
 # ── Large Binary Files ────────────────────────────────────────────────────────
 *.pdf
 stoic_notes.txt
+
+# ── Generated caches ─────────────────────────────────────────────────────────
+backend/tts_cache/

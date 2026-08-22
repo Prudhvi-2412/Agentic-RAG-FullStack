@@ -62,9 +62,9 @@ export const CitationsPanel: React.FC<CitationsPanelProps> = ({
               <div 
                 key={source.chunk_id}
                 id={`citation-${source.chunk_id}`}
-                className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-850 flex flex-col gap-2 hover:border-blue-400 dark:hover:border-blue-800 transition-all duration-500 shadow-sm ring-offset-2 dark:ring-offset-slate-900"
+                className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col gap-2 hover:border-blue-400 dark:hover:border-blue-800 transition-all duration-500 shadow-sm ring-offset-2 dark:ring-offset-slate-900"
               >
-                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-850 pb-1.5">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-1.5">
                   <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 max-w-[140px] truncate" title={source.filename}>
                     {source.filename}
                   </span>
@@ -72,19 +72,19 @@ export const CitationsPanel: React.FC<CitationsPanelProps> = ({
                     Page {source.page_number || 'N/A'}
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-600 dark:text-slate-350 leading-relaxed italic bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-100 dark:border-slate-800 max-h-36 overflow-y-auto">
+                <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed italic bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-100 dark:border-slate-800 max-h-36 overflow-y-auto">
                   "{source.context}"
                 </p>
                 <div className="flex items-center justify-between text-[9px] text-slate-400 dark:text-slate-500 mt-0.5 font-bold">
                   <span>Relevance index</span>
-                  <span className="text-emerald-600 dark:text-emerald-550">{(source.relevance_score * 100).toFixed(1)}% match</span>
+                  <span className="text-emerald-600 dark:text-emerald-500">{(source.relevance_score * 100).toFixed(1)}% match</span>
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        {/* Case 3: Document query returned no source */}
+        {/* Case 3: Document query still retrieving */}
         {currentQueryType === 'DOCUMENT_QUERY' && retrievedSources.length === 0 && isStreaming && (
           <div className="flex flex-col gap-2">
             <div className="h-20 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 animate-pulse p-3 flex flex-col gap-2">
@@ -95,6 +95,20 @@ export const CitationsPanel: React.FC<CitationsPanelProps> = ({
               <div className="h-3.5 bg-slate-200 dark:bg-slate-800 rounded w-1/3"></div>
               <div className="h-10 bg-slate-200 dark:bg-slate-800 rounded"></div>
             </div>
+          </div>
+        )}
+
+        {/* Case 4: Document query finished with nothing retrieved */}
+        {currentQueryType === 'DOCUMENT_QUERY' && retrievedSources.length === 0 && !isStreaming && (
+          <div className="h-full flex flex-col items-center justify-center text-center px-4 py-20">
+            <div className="h-12 w-12 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-400 dark:text-slate-500 mb-3">
+              <BookMarked className="h-5 w-5" />
+            </div>
+            <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400">No Matching Sources</h4>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed mt-2">
+              Nothing in your indexed documents matched this query, so the answer above is not
+              grounded in your library. Try rephrasing, or clear the document filters.
+            </p>
           </div>
         )}
 
