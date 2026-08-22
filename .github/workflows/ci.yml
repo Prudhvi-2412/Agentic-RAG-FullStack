@@ -57,7 +57,8 @@ jobs:
           SUPABASE_JWT_SECRET: placeholder-jwt-secret-for-ci-only
           CORS_ALLOW_ORIGINS: http://localhost:5173
         run: |
-          pip install pytest
+          # >=7.0 for the `pythonpath` ini option that backend/pytest.ini relies on
+          pip install "pytest>=7.0"
           pytest tests/ -q
 
   # ─────────────────────────────────────────────
