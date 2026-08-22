@@ -43,8 +43,8 @@ This is the core differentiator. The frontend landing page (`LandingView.tsx`) e
 | **Source Attribution** | Vague or fabricated references | Deterministic page-level citations with exact filename, page number, and confidence % |
 | **Query Routing** | Every query hits the same model pipeline regardless of type | Zero-shot intent classification routes chat vs. document queries separately |
 | **Multi-Document Filtering** | Query runs across all uploaded files uniformly | Checkbox-based metadata filtering scopes Pinecone search to user-selected files |
-| **Data Privacy** | Files may be stored or used in training data by the provider | Isolated private Pinecone namespace + Supabase session — never shared or trained on |
-| **Search Quality** | Pure semantic similarity only | **Hybrid search**: 70% dense cosine similarity + 30% keyword overlap reranking |
+| **Data Privacy** | Files may be stored or used in training data by the provider | Every vector is tagged with its owner's Supabase user id and every search is filtered to it — documents are never shared across accounts |
+| **Search Quality** | Pure semantic similarity only | **Hybrid search**: 50% dense cosine similarity + 50% normalized BM25, then a Gemini cross-encoder rerank |
 | **Authentication** | N/A | Supabase Auth — Email/Password + Google OAuth SSO |
 | **Response Delivery** | Full response wait (blocking) | Real-time token streaming via **Server-Sent Events (SSE)** |
 | **CI/CD** | N/A | GitHub Actions pipeline + Render auto-deploy on merge |
@@ -68,22 +68,29 @@ A lightweight zero-shot Gemini classifier intercepts every incoming query *befor
 The routing decision is **streamed back to the frontend** as an SSE `metadata` event, displayed as a visual indicator in the Chat Panel.
 
 ### 3. 🔍 Selective Metadata Filtering
-Users select specific uploaded documents via **interactive checkboxes** in the Sidebar (`Sidebar.tsx`). Pinecone restricts the similarity search scope using metadata tags:
+Users select specific uploaded documents via **interactive checkboxes** in the Sidebar (`Sidebar.tsx`). Pinecone restricts the similarity search scope using metadata tags, always combined with the ownership constraint so the filter can only ever narrow what you are allowed to see:
 ```python
-filter={"filename": {"$in": selected_filenames}}
+filter={"$and": [
+    {"$or": [{"user_id": {"$eq": user_id}}, {"document_id": {"$in": SHARED_DOCUMENT_IDS}}]},
+    {"filename": {"$in": selected_filenames}},
+]}
 ```
-Leave all checkboxes unchecked to search across your entire document index.
+Leave all checkboxes unchecked to search across your own document index plus the shared demo document.
 
 ### 4. ⚡ Dense-Sparse Hybrid Search Reranking
 Candidate chunks from Pinecone are re-ranked using a combined scoring formula:
 
 ```
-Relevance Score = 0.7 × Cosine Similarity (dense) + 0.3 × Keyword Overlap (sparse)
+Relevance Score = 0.5 × Cosine Similarity (dense) + 0.5 × Normalized BM25 (sparse)
 ```
 
-- **Dense**: 768-dimensional `text-embedding-004` cosine similarity
-- **Sparse**: Normalized keyword overlap frequency across query terms
-- Retrieves `top_k × 3` candidates from Pinecone, then reranks and returns the best `top_k`
+- **Dense**: 768-dimensional `gemini-embedding-001` cosine similarity, with HyDE query expansion
+  (the raw query embedding and a hypothetical-answer embedding are averaged 50/50)
+- **Sparse**: BM25 scores computed locally over the retrieved candidates
+- Retrieves `top_k × 3` candidates from Pinecone, hybrid-ranks them, then passes the top 8 to a
+  Gemini cross-encoder reranker which selects the final `top_k`
+- Selected chunks are finally widened with their adjacent `c-1` / `c+1` chunks (sentence-window
+  context expansion) before generation
 
 ### 5. 📡 SSE Streaming & Citations Panel
 Real-time token streaming via **Server-Sent Events (SSE)** — no waiting for full response:
@@ -108,6 +115,9 @@ Full production auth integration (`AuthModal.tsx`):
 - **Google OAuth SSO** via `supabase.auth.signInWithOAuth()`
 - Session-aware Header (`Header.tsx`) — shows user email avatar when logged in, `Sign In` button when not
 - Persists auth state across page reloads via Supabase session listener
+- The FastAPI backend independently verifies each access token's **signature, expiry and audience**
+  using `SUPABASE_JWT_SECRET` before trusting the user id it carries. Uploading and deleting
+  documents require a valid token; anonymous visitors may chat and query the shared demo document only
 
 ### 7. 📚 Multi-Session Chat Management
 Persistent chat workspace with full session management (`Sidebar.tsx`):
@@ -120,8 +130,8 @@ Persistent chat workspace with full session management (`Sidebar.tsx`):
 Full document CRUD from the Sidebar:
 - Upload documents via **drag-and-drop** or **file browser** (LandingView `onDrop` handler)
 - View indexed document count (**chunk vectors** stored per file)
-- Delete a document from the vector index — triggers `VectorStoreService.delete_document()` which purges all Pinecone vectors matching that `document_id`
-- Demo documents show a `Demo` badge label
+- Delete a document from the vector index — `VectorStoreService.delete_document()` verifies you own the document, then enumerates its vectors by id prefix and removes them (serverless Pinecone indexes do not support delete-by-metadata-filter)
+- The shared demo document shows a `Demo` badge; deleting it only hides it locally, since it belongs to every visitor
 
 ### 9. 🌙 Dark Mode Toggle
 Full system-level dark/light mode toggle via `Header.tsx`:
@@ -145,7 +155,7 @@ Voice typing capabilities integrated directly inside the conversational input to
 ### 12. 🚀 CI/CD Pipeline (GitHub Actions + Render)
 Automated deployment pipeline via `.github/workflows/`:
 - Triggers on `push` to `main` and on pull requests
-- Runs backend Python tests and frontend TypeScript build validation
+- Runs flake8, the backend pytest suite (auth, data isolation, parsing, SSE contract) and the frontend TypeScript build
 - Render auto-deploys on successful merge via `render.yaml` manifest
 - **PR preview deployments** enabled for frontend static site
 
@@ -163,6 +173,8 @@ Used in 3 distinct roles:
 | **Vision OCR** | `DocumentProcessor` | `gemini-2.5-flash` | Analyze PDF page images, extract tables/charts as markdown |
 | **Intent Classifier** | `QueryRouter` | `gemini-2.5-flash` | Zero-shot query type classification |
 | **Chat Generation** | `ChatService` | `gemini-2.5-flash` | Context-grounded streaming response generation |
+| **Cross-Encoder Rerank** | `GeminiReranker` | `gemini-2.5-flash` | Selects the final top-k chunks from the hybrid candidates |
+| **HyDE Expansion** | `EmbeddingService` | `gemini-2.5-flash` | Generates the hypothetical answer used for query expansion |
 
 ```python
 # All services use the unified google-genai Client
@@ -183,17 +195,20 @@ from pinecone import Pinecone, ServerlessSpec
 pc = Pinecone(api_key=PINECONE_API_KEY)
 # Auto-creates index if missing (768d, cosine, AWS us-east-1)
 index.upsert(vectors=[(id, embedding, metadata)])
-index.query(vector=query_embedding, filter={"filename": {"$in": [...]}})
-index.delete(filter={"document_id": {"$eq": doc_id}})
+index.query(vector=query_embedding, filter={"$and": [ownership_filter, filename_filter]})
+index.delete(ids=[...])   # ids enumerated via index.list(prefix=f"{document_id}_")
 ```
 
 ### Google Text Embeddings API
 ```python
-# EmbeddingService — uses text-embedding-004 (768 dimensions)
+# EmbeddingService — uses gemini-embedding-001 truncated to 768 dimensions
 client.models.embed_content(
-    model="text-embedding-004",
-    contents=[text],
-    config=EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT")
+    model="gemini-embedding-001",
+    contents=[text],                       # document chunks are batched in groups of 64
+    config=EmbedContentConfig(
+        task_type="RETRIEVAL_DOCUMENT",    # RETRIEVAL_QUERY for queries
+        output_dimensionality=768,
+    ),
 )
 ```
 
@@ -221,7 +236,7 @@ The frontend is built with **React + TypeScript + Vite + Tailwind CSS** and cons
 | **Header** | `Header.tsx` | Logo nav, Home/Workspace toggles, auth state (Sign In / user avatar + Logout), dark mode toggle, version badge |
 | **Landing Page** | `LandingView.tsx` | Hero section, drag-and-drop upload zone, 4-card feature grid, "DocuMind vs Standard AI" 5-card comparison section |
 | **Sidebar** | `Sidebar.tsx` | Ingest Document button with upload spinner, Conversations list with New/Delete, Document Index with checkboxes + vector counts + Demo badge + delete |
-| **Chat Panel** | `ChatPanel.tsx` | Session title, SSE streaming message display, routing indicator badge, Markdown rendering, message input |
+| **Chat Panel** | `ChatPanel.tsx` | Session title, SSE streaming message display, routing indicator badge, lightweight inline formatting (headings, bullets, bold, clickable citation chips), message input |
 | **Citations Panel** | `CitationsPanel.tsx` | Source attribution cards with filename, page number, relevance %, context snippet |
 | **Auth Modal** | `AuthModal.tsx` | Email/Password form, Google OAuth button, Sign Up/Sign In toggle, error/success alerts |
 
@@ -245,7 +260,7 @@ The landing page explicitly surfaces the key differentiators in a 3+2 bento-grid
 | Tailwind CSS | Utility-first styling + dark mode |
 | Lucide React | Icon library |
 | Supabase JS Client | Auth SDK + session management |
-| EventSource API | SSE streaming from backend |
+| `fetch` + ReadableStream | SSE streaming from backend (used instead of `EventSource`, which cannot send an Authorization header) |
 | Web Speech API | Client-side Speech-to-Text translation (browser native) |
 
 ### Backend
@@ -254,16 +269,17 @@ The landing page explicitly surfaces the key differentiators in a 3+2 bento-grid
 | FastAPI | Async REST API + SSE streaming |
 | PyMuPDF (`fitz`) | PDF page rendering to PNG pixmaps |
 | `python-docx` | Word document paragraph extraction |
-| LangChain Text Splitters | Recursive character chunking (750 tokens / 150 overlap) |
+| LangChain Text Splitters | Recursive character chunking (750 characters / 150 overlap) |
 | Pydantic V2 | Request/response schema validation |
-| `python-dotenv` | Environment variable loading |
+| `pydantic-settings` | Environment variable loading + fail-fast startup validation |
+| PyJWT | Supabase access-token signature verification |
 | `edge-tts` | Async Microsoft Azure Neural TTS engine integration |
 
 ### AI & Cloud APIs
 | Service | SDK | Role |
 |---|---|---|
 | Google Gemini 2.5 Flash | `google-genai` | Vision OCR, query routing, chat generation |
-| Google text-embedding-004 | `google-genai` | 768-dimensional dense vector embeddings |
+| Google gemini-embedding-001 | `google-genai` | 768-dimensional dense vector embeddings |
 | Pinecone Serverless | `pinecone` | Vector storage, cosine similarity search, metadata filtering |
 | Supabase | `supabase-js` | User authentication, Google OAuth |
 | MS Edge Neural Voices | `edge-tts` | Multilingual high-fidelity audio synthesis |
@@ -286,12 +302,14 @@ Agentic-RAG-FullStack/
 ├── backend/
 │   ├── app/
 │   │   ├── core/
-│   │   │   ├── config.py    # Settings loader (reads .env via pydantic)
-│   │   │   └── logging.py   # Structured logging setup
+│   │   │   ├── auth.py      # Supabase JWT verification + shared-document ids
+│   │   │   ├── config.py    # Settings loader (reads .env via pydantic, fails fast)
+│   │   │   ├── logging.py   # Structured logging setup
+│   │   │   └── retry.py     # Exponential backoff for Gemini 429s
 │   │   ├── models/          # Pydantic models (chat.py, document.py, tts.py)
 │   │   ├── routes/
 │   │   │   ├── chat.py      # POST /api/query — SSE streaming endpoint
-│   │   │   ├── document.py  # POST /api/upload, GET /api/documents, DELETE /api/documents/{id}
+│   │   │   ├── document.py  # POST /api/upload, DELETE /api/documents/{id}
 │   │   │   └── tts.py       # POST /api/tts — Speech synthesis stream endpoint
 │   │   ├── services/
 │   │   │   ├── chat.py      # ChatService — SSE orchestrator & Gemini chat stream
@@ -301,6 +319,8 @@ Agentic-RAG-FullStack/
 │   │   │   ├── tts.py       # TTSService — edge-tts synthesis + caching engine
 │   │   │   └── vectorstore.py # VectorStoreService — Pinecone upsert, hybrid search, delete
 │   │   └── main.py          # FastAPI app + startup DI + CORS config
+│   ├── tests/                # pytest suite (auth, isolation, parsing, SSE contract)
+│   ├── seed_demo_document.py # One-off script that indexes the shared demo document
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -319,6 +339,7 @@ Agentic-RAG-FullStack/
 │   │   │   ├── useChat.ts
 │   │   │   └── useAudio.ts       # Audio controls state & WebSpeech recognition manager
 │   │   ├── types/               # TypeScript interface definitions
+│   │   ├── config.ts            # Backend URL resolution + shared client constants
 │   │   ├── supabaseClient.ts    # Supabase client initialization
 │   │   ├── App.tsx              # Root orchestrator — view routing + state management
 │   │   └── main.tsx             # React DOM entry point
@@ -351,20 +372,33 @@ git clone <your-repo-url>
 cd Agentic-RAG-FullStack
 ```
 
-Create `backend/.env`:
+Copy the templates and fill them in:
+
+```bash
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
+```
+
+`backend/.env`:
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here
 PINECONE_API_KEY=your_pinecone_api_key_here
 PINECONE_INDEX_NAME=documind
 GEMINI_MODEL_NAME=gemini-2.5-flash
+# Supabase -> Project Settings -> API -> JWT Secret. The backend refuses to start without it.
+SUPABASE_JWT_SECRET=your_supabase_jwt_secret_here
+CORS_ALLOW_ORIGINS=http://localhost:5173
 ```
 
-Create `frontend/.env`:
+`frontend/.env`:
 ```env
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 VITE_BACKEND_URL=http://localhost:8000
 ```
+
+Then run `supabase_schema.sql` in the Supabase SQL editor to create the `documents`,
+`chat_sessions` and `messages` tables together with their row-level security policies.
 
 ### 2. Run Backend
 
@@ -412,9 +446,11 @@ The project includes a `render.yaml` for one-click deployment on [Render](https:
 1. Push repository to GitHub
 2. Connect repo to Render → "New Blueprint"
 3. Set secret environment variables in Render dashboard:
-   - `GEMINI_API_KEY`, `PINECONE_API_KEY` (backend)
+   - `GEMINI_API_KEY`, `PINECONE_API_KEY`, `SUPABASE_JWT_SECRET`, `CORS_ALLOW_ORIGINS` (backend)
    - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (frontend)
 4. `VITE_BACKEND_URL` is automatically injected from the backend service host
+5. Optionally seed the shared demo document once, from the `backend/` directory:
+   `python seed_demo_document.py <path-to-pdf>`
 
 **PR Preview Deployments** are enabled — every pull request gets its own preview URL.
 
@@ -426,11 +462,15 @@ The project includes a `render.yaml` for one-click deployment on [Render](https:
 |---|---|---|---|
 | `GEMINI_API_KEY` | Backend | ✅ | Google AI Studio API key for Gemini Vision + Chat + Embeddings |
 | `PINECONE_API_KEY` | Backend | ✅ | Pinecone API key for vector index |
-| `PINECONE_INDEX_NAME` | Backend | ✅ | Pinecone index name (default: `documind`) |
-| `GEMINI_MODEL_NAME` | Backend | ✅ | Gemini model (default: `gemini-2.5-flash`) |
+| `PINECONE_INDEX_NAME` | Backend | ➖ | Pinecone index name (default: `documind`) |
+| `GEMINI_MODEL_NAME` | Backend | ➖ | Gemini model (default: `gemini-2.5-flash`) |
+| `SUPABASE_JWT_SECRET` | Backend | ✅ | Supabase JWT secret used to verify access tokens. Startup fails without it |
+| `CORS_ALLOW_ORIGINS` | Backend | ➖ | Comma-separated allowed browser origins (default: `http://localhost:5173`) |
+| `MAX_UPLOAD_MB` | Backend | ➖ | Upload size limit in MB (default: `25`) |
+| `MAX_TTS_CHARS` | Backend | ➖ | Maximum characters accepted per TTS request (default: `5000`) |
 | `VITE_SUPABASE_URL` | Frontend | ✅ | Supabase project URL |
 | `VITE_SUPABASE_ANON_KEY` | Frontend | ✅ | Supabase public anonymous key |
-| `VITE_BACKEND_URL` | Frontend | ✅ | Backend API URL (auto-injected on Render) |
+| `VITE_BACKEND_URL` | Frontend | ✅ | Backend API URL. A bare hostname is accepted and prefixed with `https://` at runtime, which is what Render's `fromService` injection provides |
 
 ---
 

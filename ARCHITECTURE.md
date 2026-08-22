@@ -45,17 +45,18 @@ sequenceDiagram
     participant Pine as Pinecone DB
     
     User->>App: Drag & Drop PDF
-    App->>API: POST /api/upload (File Bytes)
+    App->>API: POST /api/upload (File Bytes) + Bearer token
+    API->>API: Verify JWT, sanitise filename, enforce size limit
     API->>Fitz: Open Document
-    loop Each Page
-        API->>Fitz: Render Page to PNG Pixmap
-        API->>Gem: generate_content(PNG, "Extract Visual Layout")
+    loop Batches of 8 pages
+        API->>Fitz: Render pages to PNG pixmaps (single-threaded; fitz is not thread-safe)
+        API->>Gem: generate_content(PNG, "Extract Visual Layout") x8 in parallel
         Gem-->>API: Yields layout markdown, charts, signatures
         API->>API: Append layout markdown to raw text
     end
     API->>API: Split pages text (Recursive Splitter)
-    API->>Gem: Generate Embeddings (768d)
-    API->>Pine: Upsert vectors & metadata (document_id, filename, text)
+    API->>Gem: Generate Embeddings (768d, batched 64 chunks per request)
+    API->>Pine: Upsert vectors & metadata (document_id, filename, user_id, text)
     API-->>App: Return 200 OK (status: indexed)
     App-->>User: Update Document List (Interactive Checkbox)
 ```
@@ -119,8 +120,9 @@ sequenceDiagram
     participant Gem as Gemini 2.5 Flash
     
     User->>App: Submits Chat Query (e.g., active filters list)
-    App->>API: POST /api/query { query, filters, history }
-    API->>API: Initialize EventSource SSE Stream
+    App->>API: POST /api/query { query, filters, history } + Bearer token
+    API->>API: Verify Supabase JWT signature -> user_id (or anonymous)
+    API->>API: Open SSE stream (fetch + ReadableStream on the client)
     
     API->>Router: classify_query(query)
     Router-->>API: Return query_type (DOCUMENT_QUERY)
@@ -186,12 +188,17 @@ To bridge the vocabulary and conceptual gap between queries and target passages,
 $$\vec{E}_{\text{final}} = 0.5 \cdot \vec{E}_{\text{query}} + 0.5 \cdot \vec{E}_{\text{hypothetical}}$$
 *This allows the vector database search to match document-to-document representations, significantly improving semantic retrieval accuracy.*
 
-#### 3. Metadata Filtering (`vectorstore.py`)
-Limits the search boundary using Pinecone's metadata keys. Checkboxes selected on the UI translate to database-level constraints:
+#### 3. Ownership Scoping & Metadata Filtering (`vectorstore.py`)
+Every search is first constrained to content the caller is allowed to read, and the UI's checkbox selection is then ANDed on top of that constraint — a client-supplied filter can only narrow the result set, never widen it:
 ```python
-filter = {"filename": {"$in": selected_filenames}}
+ownership = {"$or": [
+    {"user_id": {"$eq": user_id}},                     # your own documents
+    {"document_id": {"$in": SHARED_DOCUMENT_IDS}},     # the shared demo document
+]}
+# Anonymous callers get {"document_id": {"$in": SHARED_DOCUMENT_IDS}} only.
+filter = {"$and": [ownership, {"filename": {"$in": selected_filenames}}]}
 ```
-*This allows multi-document isolation, ensuring users search only the files they explicitly select.*
+*This gives both multi-tenant isolation across accounts and multi-document isolation within an account.*
 
 #### 4. Dense-Sparse Hybrid Search (`vectorstore.py`)
 Vector databases excel at capturing semantic synonyms but struggle with exact keywords, codes, or formulas. We resolve this by calculating local BM25 keyword matching scores for the dense candidates, and performing Reciprocal Rank/Score Fusion:
