@@ -2,7 +2,10 @@
 .env
 *.env
 .env.*
-!.env.example        # Allow the example template to be committed
+# Allow the example templates to be committed. (Git has no trailing comments in ignore
+# patterns — a comment on this line would become part of the pattern and silently break it.)
+!.env.example
+!**/.env.example
 
 # ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
