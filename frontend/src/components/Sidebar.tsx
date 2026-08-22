@@ -1,6 +1,7 @@
 import React from 'react';
 import { Upload, MessageSquare, FileText, Trash2, Settings, Sparkles } from 'lucide-react';
 import { ChatSession, DocumentItem } from '../types';
+import { DEMO_DOCUMENT_ID } from '../config';
 
 interface SidebarProps {
   isUploading: boolean;
@@ -139,7 +140,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <div className="truncate flex-1">
                       <div className="flex items-center gap-1.5">
                         <p className={`text-xs font-bold truncate ${isSelected ? 'text-blue-900 dark:text-blue-300' : 'text-slate-700 dark:text-slate-300'}`}>{doc.name}</p>
-                        {doc.id === 'ikigai-default-doc-id' && (
+                        {doc.id === DEMO_DOCUMENT_ID && (
                           <span className="flex-shrink-0 text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/50 uppercase tracking-wide">
                             Demo
                           </span>

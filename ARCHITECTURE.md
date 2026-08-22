@@ -171,7 +171,7 @@ sequenceDiagram
         Gem-->>API: Yield word tokens
         API-->>App: SSE event: token { text }
     end
-    API-->>App: SSE event: complete {}
+    API-->>App: SSE event: complete { status: done }
 ```
 
 ---
