@@ -1,5 +1,10 @@
+"""Manual smoke script: run the backend locally, then `python smoke_test_api.py`.
+
+Not part of the pytest suite (see backend/tests/) — it requires a running server and live
+Gemini/Pinecone credentials.
+"""
+
 import requests
-import json
 
 BASE_URL = "http://localhost:8000"
 
