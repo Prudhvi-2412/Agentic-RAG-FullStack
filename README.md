@@ -3,8 +3,7 @@
 <div align="center">
 
 [![Live Demo](https://img.shields.io/badge/🌐%20Live%20Demo-Render-4f46e5?style=for-the-badge)](https://agentic-rag-fullstack.onrender.com/)
-[![Backend](https://img.shields.io/badge/FastAPI-Backend-009688?style=for-the-badge&logo=fastapi)](https://agentic-rag-fullstack.onrender.com/)
-[![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
+[![Backend](https://img.shields.io/badge/FastAPI-Backend-009688?style=for-the-badge&logo=fastapi)](https://agentic-rag-fullstack-1.onrender.com/)
 [![Version](https://img.shields.io/badge/Version-1.0.0-brightgreen?style=for-the-badge)](#)
 
 **🌐 Live Demo:** [https://agentic-rag-fullstack.onrender.com/](https://agentic-rag-fullstack.onrender.com/)
@@ -13,7 +12,7 @@
 
 ---
 
-DocuMind AI is a **production-grade, enterprise-ready Agentic Retrieval-Augmented Generation (RAG) platform**. Upload PDF, DOCX, Markdown, or TXT documents and interact with them using layout-aware visual grounding, intent-based agentic routing, selective document filtering, hybrid vector search, and real-time streaming — all powered by **Google Gemini 2.5 Flash** and **Pinecone Serverless**.
+DocuMind AI is a **full-stack, multi-tenant Agentic Retrieval-Augmented Generation (RAG) platform**. Upload PDF, DOCX, Markdown, or TXT documents and interact with them using layout-aware visual grounding, intent-based agentic routing, selective document filtering, hybrid vector search, and real-time streaming — all powered by **Google Gemini 2.5 Flash** and **Pinecone Serverless**.
 
 ---
 
@@ -38,8 +37,8 @@ This is the core differentiator. The frontend landing page (`LandingView.tsx`) e
 
 | Feature | Standard AI Chat (e.g., ChatGPT file upload) | DocuMind AI (This Project) |
 |---|---|---|
-| **Context Scale** | Hard token limit — large PDFs get truncated or hallucinated | Infinite scale: chunks & indexes full document collection; retrieves only relevant segments |
-| **Visual/Table Understanding** | Flat text extraction — tables become garbled, charts are lost | Gemini Vision OCR per page — tables → Markdown, diagrams → described, layout preserved |
+| **Context Scale** | Hard token limit — large PDFs get truncated or hallucinated | Not bounded by the context window: the full collection is chunked and indexed, and only the relevant segments are sent |
+| **Visual/Table Understanding** | Flat text extraction — tables become garbled, charts are lost | PyMuPDF text layer plus per-page Gemini Vision analysis — tables → Markdown, diagrams → described (and genuine OCR on scanned pages) |
 | **Source Attribution** | Vague or fabricated references | Deterministic page-level citations with exact filename, page number, and confidence % |
 | **Query Routing** | Every query hits the same model pipeline regardless of type | Zero-shot intent classification routes chat vs. document queries separately |
 | **Multi-Document Filtering** | Query runs across all uploaded files uniformly | Checkbox-based metadata filtering scopes Pinecone search to user-selected files |
@@ -125,7 +124,7 @@ Persistent chat workspace with full session management (`Sidebar.tsx`):
 - Create unlimited named **conversation sessions**
 - Switch between sessions — each maintains its own message history
 - Delete individual sessions with hover-reveal trash icon
-- Default "Ikigai" demo document pre-loaded in the index for immediate exploration
+- A shared "Ikigai" demo document is listed for every visitor, including anonymous ones. It is **not** indexed automatically — seed it once with `python seed_demo_document.py <path-to-pdf>` from the `backend/` directory (see Deployment step 5)
 
 ### 8. 🗑️ Document Lifecycle Management
 Full document CRUD from the Sidebar:
@@ -167,7 +166,7 @@ Automated deployment pipeline via `.github/workflows/`:
 DocuMind integrates **4 external API services**:
 
 ### Google Gemini API (`google-genai` SDK)
-Used in 3 distinct roles:
+Used in 5 distinct roles:
 
 | Role | Service | Model | Purpose |
 |---|---|---|---|
@@ -230,7 +229,7 @@ supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: origi
 
 ## 🎨 Frontend Features
 
-The frontend is built with **React + TypeScript + Vite + Tailwind CSS** and consists of 6 modular components:
+The frontend is built with **React 18 + TypeScript + Vite + Tailwind CSS** and consists of 7 modular components:
 
 | Component | File | Features |
 |---|---|---|
@@ -240,14 +239,18 @@ The frontend is built with **React + TypeScript + Vite + Tailwind CSS** and cons
 | **Chat Panel** | `ChatPanel.tsx` | Session title, SSE streaming message display, routing indicator badge, lightweight inline formatting (headings, bullets, bold, clickable citation chips), message input |
 | **Citations Panel** | `CitationsPanel.tsx` | Source attribution cards with filename, page number, relevance %, context snippet |
 | **Auth Modal** | `AuthModal.tsx` | Email/Password form, Google OAuth button, Sign Up/Sign In toggle, error/success alerts |
+| **Voice Controller** | `VoiceController.tsx` | Popover with TTS settings (language, gender, rate) and STT listening-language selection |
 
-### Landing Page — "Next-Gen vs Standard LLM" Section
-The landing page explicitly surfaces the key differentiators in a 3+2 bento-grid card layout:
-1. **Unbounded Context Scale** — no token truncation
-2. **Visual & Structural Grounding** — layout OCR vs. flat text
-3. **Deterministic Source Mappings** — exact page citations vs. hallucinated refs
-4. **Intent-Based Routing** — smart bypass of vector search
-5. **Private Sandbox Data Security** — isolated namespace vs. public LLM training
+### Landing Page — "Next-Generation Document Intelligence" Section
+The landing page surfaces the key differentiators in a 3+2 bento-grid card layout:
+1. **Parallel Visual Ingestion** — up to 8 pages analysed concurrently, tables transcribed to Markdown
+2. **Hybrid Dense-Sparse RAG** — 768-d embeddings plus local BM25, ranked by a Gemini cross-encoder
+3. **Interactive Citation Mapping** — inline `[1]` chips scroll and highlight the source chunk
+4. **History-Aware Condensation** — follow-ups rewritten into standalone questions before search
+5. **JWT-Isolated Multi-Tenancy** — Pinecone upserts and queries restricted to your verified user id
+
+Above it, a 4-card "SaaS Feature Integrations" grid covers the Intelligent Router, Pinecone
+Serverless, Source Citations and Multimodal OCR Ingestion.
 
 ---
 
@@ -315,12 +318,15 @@ Agentic-RAG-FullStack/
 │   │   ├── services/
 │   │   │   ├── chat.py      # ChatService — SSE orchestrator & Gemini chat stream
 │   │   │   ├── document.py  # DocumentProcessor — PDF/DOCX/TXT extraction + Gemini Vision
-│   │   │   ├── embedding.py # EmbeddingService — text-embedding-004 via google-genai
-│   │   │   ├── router.py    # QueryRouter — zero-shot intent classifier
+│   │   │   ├── embedding.py # EmbeddingService — gemini-embedding-001 (768d) + HyDE
+│   │   │   ├── parsers.py   # PDFParser (PyMuPDF + Gemini Vision), DocxParser, TextParser
+│   │   │   ├── reranker.py  # GeminiReranker — LLM cross-encoder over hybrid candidates
+│   │   │   ├── router.py    # QueryRouter — zero-shot intent classifier + condensation
 │   │   │   ├── tts.py       # TTSService — edge-tts synthesis + caching engine
 │   │   │   └── vectorstore.py # VectorStoreService — Pinecone upsert, hybrid search, delete
 │   │   └── main.py          # FastAPI app + startup DI + CORS config
 │   ├── tests/                # pytest suite (auth, isolation, parsing, SSE contract)
+│   ├── pytest.ini            # testpaths + pythonpath so the suite runs under any invocation
 │   ├── seed_demo_document.py # One-off script that indexes the shared demo document
 │   ├── requirements.txt
 │   └── .env.example
@@ -346,10 +352,12 @@ Agentic-RAG-FullStack/
 │   │   └── main.tsx             # React DOM entry point
 │   ├── tailwind.config.js
 │   ├── vite.config.ts
-│   └── package.json
+│   ├── package.json
+│   └── .env.example
 ├── notebooks/                   # Exploration / testing Jupyter notebooks
 ├── source/                      # Additional source materials
-├── supabase_schema.sql          # Supabase database schema (if used for document metadata)
+├── supabase_schema.sql          # Required: documents / chat_sessions / messages + RLS policies
+├── smoke_test_api.py            # Manual script against a running server (not part of pytest)
 ├── render.yaml                  # Render deployment manifest (IaC)
 ├── ARCHITECTURE.md              # Data flow diagrams + Mermaid sequence charts
 └── README.md
@@ -497,7 +505,8 @@ For detailed Mermaid data flow diagrams, ingestion pipeline sequences, query rou
 
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE).
+No licence file is currently included in this repository, so default copyright applies.
+Add a `LICENSE` file if you intend to publish it under an open-source licence.
 
 ---
 
