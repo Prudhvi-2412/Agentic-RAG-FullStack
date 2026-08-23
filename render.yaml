@@ -15,8 +15,11 @@ services:
         sync: false          # Set manually in Render dashboard → keep secret
       - key: PINECONE_API_KEY
         sync: false
+      # At least one of SUPABASE_JWT_SECRET / SUPABASE_URL is required — see backend/.env.example
       - key: SUPABASE_JWT_SECRET
-        sync: false          # Supabase dashboard → API → JWT Secret (required for auth)
+        sync: false          # Supabase dashboard → API → JWT Secret (legacy HS256 projects)
+      - key: SUPABASE_URL
+        sync: false          # https://<ref>.supabase.co (projects using asymmetric JWT keys)
       - key: CORS_ALLOW_ORIGINS
         sync: false          # Comma-separated frontend origins, e.g. https://documind-frontend.onrender.com
       - key: PINECONE_INDEX_NAME

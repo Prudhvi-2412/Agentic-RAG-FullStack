@@ -116,7 +116,8 @@ Full production auth integration (`AuthModal.tsx`):
 - Session-aware Header (`Header.tsx`) — shows user email avatar when logged in, `Sign In` button when not
 - Persists auth state across page reloads via Supabase session listener
 - The FastAPI backend independently verifies each access token's **signature, expiry and audience**
-  using `SUPABASE_JWT_SECRET` before trusting the user id it carries. Uploading and deleting
+  before trusting the user id it carries — using the legacy HS256 secret (`SUPABASE_JWT_SECRET`) or
+  the project's JWKS (`SUPABASE_URL`), whichever matches the token's algorithm. Uploading and deleting
   documents require a valid token; anonymous visitors may chat and query the shared demo document only
 
 ### 7. 📚 Multi-Session Chat Management
@@ -385,8 +386,10 @@ GEMINI_API_KEY=your_gemini_api_key_here
 PINECONE_API_KEY=your_pinecone_api_key_here
 PINECONE_INDEX_NAME=documind
 GEMINI_MODEL_NAME=gemini-2.5-flash
-# Supabase -> Project Settings -> API -> JWT Secret. The backend refuses to start without it.
+# Supabase -> Project Settings -> API. Set at least one of these two; see the notes under
+# "Environment Variables" below for which one your project needs.
 SUPABASE_JWT_SECRET=your_supabase_jwt_secret_here
+SUPABASE_URL=https://your-project.supabase.co
 CORS_ALLOW_ORIGINS=http://localhost:5173
 ```
 
@@ -446,7 +449,8 @@ The project includes a `render.yaml` for one-click deployment on [Render](https:
 1. Push repository to GitHub
 2. Connect repo to Render → "New Blueprint"
 3. Set secret environment variables in Render dashboard:
-   - `GEMINI_API_KEY`, `PINECONE_API_KEY`, `SUPABASE_JWT_SECRET`, `CORS_ALLOW_ORIGINS` (backend)
+   - `GEMINI_API_KEY`, `PINECONE_API_KEY`, `CORS_ALLOW_ORIGINS` and either `SUPABASE_JWT_SECRET`
+     or `SUPABASE_URL` (backend)
    - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (frontend)
 4. `VITE_BACKEND_URL` is automatically injected from the backend service host
 5. Optionally seed the shared demo document once, from the `backend/` directory:
@@ -464,13 +468,24 @@ The project includes a `render.yaml` for one-click deployment on [Render](https:
 | `PINECONE_API_KEY` | Backend | ✅ | Pinecone API key for vector index |
 | `PINECONE_INDEX_NAME` | Backend | ➖ | Pinecone index name (default: `documind`) |
 | `GEMINI_MODEL_NAME` | Backend | ➖ | Gemini model (default: `gemini-2.5-flash`) |
-| `SUPABASE_JWT_SECRET` | Backend | ✅ | Supabase JWT secret used to verify access tokens. Startup fails without it |
+| `SUPABASE_JWT_SECRET` | Backend | ⚠️ | Legacy Supabase JWT secret, for projects signing tokens with HS256 |
+| `SUPABASE_URL` | Backend | ⚠️ | Supabase project URL, for projects signing tokens with asymmetric keys (JWKS is fetched from it) |
 | `CORS_ALLOW_ORIGINS` | Backend | ➖ | Comma-separated allowed browser origins (default: `http://localhost:5173`) |
 | `MAX_UPLOAD_MB` | Backend | ➖ | Upload size limit in MB (default: `25`) |
 | `MAX_TTS_CHARS` | Backend | ➖ | Maximum characters accepted per TTS request (default: `5000`) |
 | `VITE_SUPABASE_URL` | Frontend | ✅ | Supabase project URL |
 | `VITE_SUPABASE_ANON_KEY` | Frontend | ✅ | Supabase public anonymous key |
 | `VITE_BACKEND_URL` | Frontend | ✅ | Backend API URL. A bare hostname is accepted and prefixed with `https://` at runtime, which is what Render's `fromService` injection provides |
+
+⚠️ **At least one of `SUPABASE_JWT_SECRET` / `SUPABASE_URL` must be set** — the backend refuses to
+start without a way to verify access-token signatures. Which one you need depends on how your
+Supabase project signs tokens (Dashboard → Project Settings → API):
+
+- **JWT Settings → JWT Secret** shown → set `SUPABASE_JWT_SECRET` (legacy HS256 projects)
+- **JWT Keys → ECC/RSA "Current key"** shown → set `SUPABASE_URL` (asymmetric ES256/RS256 projects)
+
+Setting both is safe: each token is verified against the key source matching its own algorithm,
+and an HS256 token is never verified with a key from the JWKS.
 
 ---
 

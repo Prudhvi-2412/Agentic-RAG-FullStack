@@ -1,6 +1,6 @@
-from typing import List
+from typing import List, Optional
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,11 +11,35 @@ class Settings(BaseSettings):
     pinecone_index_name: str = Field("documind", description="Pinecone Index Name")
     gemini_model_name: str = Field("gemini-2.5-flash", description="Gemini Generative Model Name")
 
-    # Supabase JWT verification (HS256 shared secret from the Supabase dashboard).
-    # Required: without it the backend cannot prove which user a request belongs to,
-    # and per-user document isolation would be unenforceable.
-    supabase_jwt_secret: str = Field(..., description="Supabase JWT secret used to verify access tokens")
+    # Supabase access-token verification. Supabase signs tokens either with a legacy shared
+    # HS256 secret or with asymmetric keys published as a JWKS, depending on the project's
+    # age and settings — so at least one of these must be configured. Without a way to verify
+    # signatures the backend cannot prove which user a request belongs to, and per-user
+    # document isolation would be unenforceable.
+    supabase_jwt_secret: Optional[str] = Field(
+        None, description="Legacy Supabase JWT secret, for projects signing with HS256"
+    )
+    supabase_url: Optional[str] = Field(
+        None, description="Supabase project URL, used to fetch the JWKS for asymmetric (ES256/RS256) tokens"
+    )
     supabase_jwt_audience: str = Field("authenticated", description="Expected 'aud' claim on Supabase access tokens")
+
+    @model_validator(mode="after")
+    def _require_a_token_verification_method(self):
+        if not self.supabase_jwt_secret and not self.supabase_url:
+            raise ValueError(
+                "No way to verify Supabase access tokens. Set SUPABASE_JWT_SECRET (Supabase "
+                "dashboard -> Project Settings -> API -> JWT Secret / Legacy JWT Secret) for "
+                "HS256-signed projects, or SUPABASE_URL (e.g. https://<ref>.supabase.co) for "
+                "projects using asymmetric JWT signing keys. Setting both is safe."
+            )
+        return self
+
+    @property
+    def supabase_jwks_url(self) -> Optional[str]:
+        if not self.supabase_url:
+            return None
+        return f"{self.supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
 
     # HTTP. Kept as a raw string so the value can be supplied as a plain comma-separated
     # list in Render/CI env vars rather than JSON; see `cors_origins`.
