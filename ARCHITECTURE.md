@@ -49,7 +49,7 @@ sequenceDiagram
     API->>API: Verify JWT, sanitise filename, enforce size limit
     API->>Fitz: Open Document
     loop Batches of 8 pages
-        API->>Fitz: Render pages to PNG pixmaps (single-threaded; fitz is not thread-safe)
+        API->>Fitz: Render pages to PNG pixmaps, single-threaded because fitz is not thread-safe
         API->>Gem: generate_content(PNG, "Extract Visual Layout") x8 in parallel
         Gem-->>API: Yields layout markdown, charts, signatures
         API->>API: Append layout markdown to raw text
