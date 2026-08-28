@@ -505,8 +505,9 @@ For detailed Mermaid data flow diagrams, ingestion pipeline sequences, query rou
 
 ## 📄 License
 
-No licence file is currently included in this repository, so default copyright applies.
-Add a `LICENSE` file if you intend to publish it under an open-source licence.
+MIT License
+
+Copyright (c) 2026 Prudhvi
 
 ---
 
