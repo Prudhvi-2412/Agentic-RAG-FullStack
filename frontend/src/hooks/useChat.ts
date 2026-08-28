@@ -31,6 +31,10 @@ export function useChat(user: User | null, activeFilters: string[]) {
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  // Effects below key off the id rather than the user object: a token refresh hands back a
+  // new object for the same person, and re-running them would abort an in-flight stream.
+  const userId = user?.id ?? null;
+
   const activeSession = chatSessions.find(s => s.id === activeSessionId) || chatSessions[0];
   const messages = activeSession?.messages ?? [];
 
@@ -45,7 +49,7 @@ export function useChat(user: User | null, activeFilters: string[]) {
     return () => abortRef.current?.abort();
   }, []);
 
-  // Load chat sessions when user changes
+  // Load chat sessions when the signed-in identity changes
   useEffect(() => {
     let cancelled = false;
 
@@ -137,7 +141,7 @@ export function useChat(user: User | null, activeFilters: string[]) {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [userId]);
 
   // Persist guest sessions. Skipped while streaming so a long answer does not trigger a
   // localStorage write on every token.
@@ -378,7 +382,12 @@ export function useChat(user: User | null, activeFilters: string[]) {
         if (error) console.error('Error inserting assistant message:', error);
       }
     } catch (err: any) {
-      if (err?.name === 'AbortError') return;
+      if (err?.name === 'AbortError') {
+        // Deliberate cancellation (sign-out, identity change, unmount) - no error to show,
+        // but log it: a silent abort with no trace is very hard to diagnose from a bug report.
+        console.debug('Chat stream aborted before completion.');
+        return;
+      }
 
       console.error(err);
       const detail = accumulatedText

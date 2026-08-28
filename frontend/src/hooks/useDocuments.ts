@@ -21,6 +21,10 @@ export function useDocuments(user: User | null, onUploadSuccess?: () => void) {
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Keyed on the id, not the user object: Supabase hands back a new object on every token
+  // refresh, which would otherwise clear the selected document filters mid-session.
+  const userId = user?.id ?? null;
+
   // Load documents when user changes
   useEffect(() => {
     let cancelled = false;
@@ -67,7 +71,7 @@ export function useDocuments(user: User | null, onUploadSuccess?: () => void) {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [userId]);
 
   const readDeletedIds = (): string[] => {
     try {
